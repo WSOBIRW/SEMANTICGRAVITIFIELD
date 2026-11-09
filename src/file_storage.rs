@@ -343,7 +343,7 @@ fn sync_directory(path: &Path) -> Result<(), io::Error> {
 mod tests {
     use super::*;
     use crate::{
-        encode_record, EventValidator, JournalCheckpoint, MarketEvent, Quote, RecoveryManifest,
+        encode_record, EventValidator, JournalCheckpoint, MarketEvent, Quote, RecoveryGenerationError, RecoveryManifest,
     };
     use std::sync::{Arc, Barrier};
     use std::thread;
