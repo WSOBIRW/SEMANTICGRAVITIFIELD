@@ -35,10 +35,10 @@ pub enum ValidationWarning {
 #[derive(Default)]
 pub struct EventValidator {
     // Контракт MVP: event_id глобально уникален в пределах экземпляра валидатора.
-    seen_event_ids: HashSet<String>,
-    event_id_order: VecDeque<String>,
-    dedup_capacity: Option<NonZeroUsize>,
-    last_sequences: HashMap<(String, String), u64>,
+    pub(crate) seen_event_ids: HashSet<String>,
+    pub(crate) event_id_order: VecDeque<String>,
+    pub(crate) dedup_capacity: Option<NonZeroUsize>,
+    pub(crate) last_sequences: HashMap<(String, String), u64>,
 }
 
 impl EventValidator {
