@@ -39,6 +39,7 @@ pub enum JournalError {
     InvalidEventEncoding,
     LengthOverflow,
     Snapshot(crate::SnapshotError),
+    CheckpointMismatch { expected: JournalCheckpoint, actual: JournalCheckpoint },
     Validation { offset: u64, error: ValidationError },
 }
 
@@ -79,6 +80,7 @@ impl EventValidator {
         &mut self,
         bytes: &[u8],
         anchor: &JournalCheckpoint,
+        expected_end: &JournalCheckpoint,
     ) -> Result<ReplayReport, JournalError> {
         let mut reader = Reader { bytes, pos: 0 };
         let mut checkpoint = anchor.clone();
@@ -138,6 +140,13 @@ impl EventValidator {
                 .ok_or(JournalError::LengthOverflow)?;
         }
 
+        if &checkpoint != expected_end {
+            return Err(JournalError::CheckpointMismatch {
+                expected: expected_end.clone(),
+                actual: checkpoint,
+            });
+        }
+
         Ok(ReplayReport {
             checkpoint,
             records_replayed: replayed,
@@ -150,9 +159,10 @@ impl EventValidator {
         snapshot: &[u8],
         journal: &[u8],
         anchor: &JournalCheckpoint,
+        expected_end: &JournalCheckpoint,
     ) -> Result<(Self, ReplayReport), JournalError> {
         let mut validator = Self::restore_snapshot(snapshot).map_err(JournalError::Snapshot)?;
-        let report = validator.replay_journal(journal, anchor)?;
+        let report = validator.replay_journal(journal, anchor, expected_end)?;
         Ok((validator, report))
     }
 }
@@ -308,6 +318,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Quote;
 
     fn quote(id: &str, seq: u64) -> MarketEvent {
         MarketEvent::quote(
@@ -330,12 +341,24 @@ mod tests {
         let mut checkpoint = JournalCheckpoint::default();
         let first = encode_record(&checkpoint, &quote("e1", 1)).unwrap();
         let mut validator = EventValidator::new();
-        let report = validator.replay_journal(&first, &checkpoint).unwrap();
+        let first_end = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: first[first.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
+        let report = validator
+            .replay_journal(&first, &checkpoint, &first_end)
+            .unwrap();
         assert_eq!(report.records_replayed, 1);
         checkpoint = report.checkpoint;
 
         let second = encode_record(&checkpoint, &quote("e2", 2)).unwrap();
-        let report = validator.replay_journal(&second, &checkpoint).unwrap();
+        let second_end = JournalCheckpoint {
+            next_offset: 2,
+            last_hash: second[second.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
+        let report = validator
+            .replay_journal(&second, &checkpoint, &second_end)
+            .unwrap();
         assert_eq!(report.records_replayed, 1);
         assert_eq!(report.checkpoint.next_offset, 2);
     }
@@ -349,7 +372,7 @@ mod tests {
             last_hash: [7; DIGEST_LEN],
         };
         assert!(matches!(
-            validator.replay_journal(&bytes, &wrong),
+            validator.replay_journal(&bytes, &wrong, &JournalCheckpoint::default()),
             Err(JournalError::UnexpectedOffset { .. })
         ));
     }
@@ -361,7 +384,7 @@ mod tests {
         bytes[last] ^= 1;
         let mut validator = EventValidator::new();
         assert_eq!(
-            validator.replay_journal(&bytes, &JournalCheckpoint::default()),
+            validator.replay_journal(&bytes, &JournalCheckpoint::default(), &JournalCheckpoint {\n                next_offset: 1,\n                last_hash: bytes[bytes.len() - DIGEST_LEN..].try_into().unwrap(),\n            }),
             Err(JournalError::InvalidDigest)
         );
     }
@@ -369,10 +392,14 @@ mod tests {
     #[test]
     fn rejects_truncated_tail_without_silent_acceptance() {
         let mut bytes = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
+        let expected_end = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: bytes[bytes.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
         bytes.pop();
         let mut validator = EventValidator::new();
         assert!(matches!(
-            validator.replay_journal(&bytes, &JournalCheckpoint::default()),
+            validator.replay_journal(&bytes, &JournalCheckpoint::default(), &expected_end),
             Err(JournalError::Truncated)
         ));
     }
@@ -382,16 +409,23 @@ mod tests {
         let snapshot = EventValidator::new().encode_snapshot().unwrap();
         let first = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
         let mut checkpoint = JournalCheckpoint::default();
-        checkpoint = EventValidator::new()
-            .replay_journal(&first, &checkpoint)
-            .unwrap()
-            .checkpoint;
+        checkpoint.next_offset = 1;
+        checkpoint.last_hash = first[first.len() - DIGEST_LEN..].try_into().unwrap();
         let second = encode_record(&checkpoint, &quote("e2", 2)).unwrap();
+        let expected_end = JournalCheckpoint {
+            next_offset: 2,
+            last_hash: second[second.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
 
         let mut segment = first;
         segment.extend_from_slice(&second);
         let (replayed, report) =
-            EventValidator::restore_and_replay(&snapshot, &segment, &JournalCheckpoint::default())
+            EventValidator::restore_and_replay(
+                &snapshot,
+                &segment,
+                &JournalCheckpoint::default(),
+                &expected_end
+            )
                 .unwrap();
         assert_eq!(report.records_replayed, 2);
 
@@ -408,16 +442,25 @@ mod tests {
     fn invalid_event_does_not_return_partial_restored_state() {
         let snapshot = EventValidator::new().encode_snapshot().unwrap();
         let valid = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
-        let checkpoint = EventValidator::new()
-            .replay_journal(&valid, &JournalCheckpoint::default())
-            .unwrap()
-            .checkpoint;
+        let checkpoint = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: valid[valid.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
         let invalid = encode_record(&checkpoint, &quote("e1", 2)).unwrap();
+        let expected_end = JournalCheckpoint {
+            next_offset: 2,
+            last_hash: invalid[invalid.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
         let mut journal = valid;
         journal.extend_from_slice(&invalid);
 
         assert!(matches!(
-            EventValidator::restore_and_replay(&snapshot, &journal, &JournalCheckpoint::default()),
+            EventValidator::restore_and_replay(
+                &snapshot,
+                &journal,
+                &JournalCheckpoint::default(),
+                &expected_end
+            ),
             Err(JournalError::Validation {
                 error: ValidationError::DuplicateEventId,
                 ..
