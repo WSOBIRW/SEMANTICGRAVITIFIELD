@@ -127,7 +127,11 @@ impl EventValidator {
         };
 
         let id_count = reader.count()?;
-        let mut seen_event_ids = HashSet::with_capacity(id_count);
+        if capacity.is_some_and(|cap| id_count > cap.get()) {
+            return Err(SnapshotError::InvalidCapacity);
+        }
+        // id_count поступает из недоверенных байтов. Не резервируем память по нему заранее.
+        let mut seen_event_ids = HashSet::new();
         let mut event_id_order = VecDeque::new();
         let mut previous: Option<String> = None;
 
@@ -343,6 +347,25 @@ mod tests {
         assert!(matches!(
             EventValidator::restore_snapshot(b"SGF"),
             Err(SnapshotError::Truncated)
+        ));
+    }
+    #[test]
+    fn rejects_bounded_snapshot_count_above_capacity_before_reading_ids() {
+        let mut validator = EventValidator::with_dedup_capacity(NonZeroUsize::new(1).unwrap());
+        validator.validate(&event("a", "s", "i", 1)).unwrap();
+        let mut bytes = validator.encode_snapshot().unwrap();
+
+        // Заголовок: magic(4) + version(2) + mode(1) + capacity(8), затем id_count.
+        let count_offset = 4 + 2 + 1 + 8;
+        bytes[count_offset..count_offset + 4].copy_from_slice(&2u32.to_le_bytes());
+
+        let payload_len = bytes.len() - DIGEST_LEN;
+        let digest = Sha256::digest(&bytes[..payload_len]);
+        bytes[payload_len..].copy_from_slice(&digest);
+
+        assert!(matches!(
+            EventValidator::restore_snapshot(&bytes),
+            Err(SnapshotError::InvalidCapacity)
         ));
     }
 }

@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use crate::event::MarketEvent;
 use crate::validation::{EventValidator, ValidationError, ValidationWarning};
 
@@ -57,6 +59,19 @@ pub struct ErrorPreventionEngine {
 impl ErrorPreventionEngine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Создаёт движок с ограниченным FIFO-окном дедупликации.
+    pub fn with_dedup_capacity(capacity: NonZeroUsize) -> Self {
+        Self {
+            validator: EventValidator::with_dedup_capacity(capacity),
+        }
+    }
+
+    /// Явно сбрасывает sequence watermark выбранного потока после подтверждённого reconnect.
+    /// Дедупликация event_id и состояние остальных потоков сохраняются.
+    pub fn reset_stream(&mut self, source_id: &str, instrument_id: &str) -> bool {
+        self.validator.reset_stream(source_id, instrument_id)
     }
 
     pub fn inspect(&mut self, event: &MarketEvent) -> PreventionReport {
@@ -130,6 +145,7 @@ fn map_error(error: ValidationError) -> Finding {
 mod tests {
     use super::*;
     use crate::event::Quote;
+    use std::num::NonZeroUsize;
 
     fn quote(id: &str, seq: u64) -> MarketEvent {
         MarketEvent::quote(
@@ -213,5 +229,44 @@ mod tests {
         assert!(report.accepted);
         assert_eq!(report.findings[0].code, FindingCode::ClockSkewSuspected);
         assert_eq!(report.findings[0].severity, Severity::Warning);
+    }
+    #[test]
+    fn bounded_deduplication_is_available_through_public_engine_api() {
+        let mut engine = ErrorPreventionEngine::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
+
+        assert!(engine.inspect(&quote("q1", 1)).accepted);
+        assert!(engine.inspect(&quote("q2", 2)).accepted);
+        assert!(engine.inspect(&quote("q3", 3)).accepted);
+
+        // q1 вытеснен из окна; повтор должен быть принят при следующей sequence.
+        assert!(engine.inspect(&quote("q1", 4)).accepted);
+    }
+
+    #[test]
+    fn stream_reset_is_available_through_public_engine_api() {
+        let mut engine = ErrorPreventionEngine::new();
+
+        assert!(engine.inspect(&quote("q1", 500)).accepted);
+        assert!(engine.reset_stream("source", "GBPUSD"));
+        assert!(engine.inspect(&quote("q2", 1)).accepted);
+
+        // Reset не очищает глобальную дедупликацию event_id.
+        let duplicate = MarketEvent::quote(
+            "q1",
+            "source",
+            "GBPUSD",
+            20,
+            21,
+            Some(2),
+            Quote {
+                bid_ticks: 100,
+                ask_ticks: 101,
+                price_scale: 10,
+            },
+        );
+        assert_eq!(
+            engine.inspect(&duplicate).findings[0].code,
+            FindingCode::DuplicateEvent
+        );
     }
 }
