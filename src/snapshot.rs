@@ -351,8 +351,7 @@ mod tests {
     }
     #[test]
     fn rejects_bounded_snapshot_count_above_capacity_before_reading_ids() {
-        let mut validator =
-            EventValidator::with_dedup_capacity(NonZeroUsize::new(1).unwrap());
+        let mut validator = EventValidator::with_dedup_capacity(NonZeroUsize::new(1).unwrap());
         validator.validate(&event("a", "s", "i", 1)).unwrap();
         let mut bytes = validator.encode_snapshot().unwrap();
 
@@ -369,5 +368,4 @@ mod tests {
             Err(SnapshotError::InvalidCapacity)
         ));
     }
-
 }
