@@ -27,6 +27,7 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub enum FileRecoveryStorageError {
     Io(io::Error),
     InvalidCurrent,
+    InvalidLockFile,
     InvalidGenerationDirectory,
     UnreferencedGenerationExists,
     ManifestGenerationMismatch { pointer: u64, manifest: u64 },
@@ -39,6 +40,7 @@ impl std::fmt::Display for FileRecoveryStorageError {
         match self {
             Self::Io(error) => write!(f, "file recovery storage I/O error: {error}"),
             Self::InvalidCurrent => write!(f, "invalid SGFC current pointer"),
+            Self::InvalidLockFile => write!(f, "writer lock path is not a regular file"),
             Self::InvalidGenerationDirectory => {
                 write!(f, "invalid recovery generation directory")
             }
@@ -136,6 +138,21 @@ impl FileRecoveryStorage {
         fs::create_dir_all(root.join(".staging"))?;
         ensure_real_directory(&root.join("generations"))?;
         ensure_real_directory(&root.join(".staging"))?;
+        let lock_path = root.join(".writer.lock");
+        match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => file.sync_all()?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+        let lock_metadata = fs::symlink_metadata(&lock_path)?;
+        if !lock_metadata.file_type().is_file() || lock_metadata.file_type().is_symlink() {
+            return Err(FileRecoveryStorageError::InvalidLockFile);
+        }
         Ok(Self { root })
     }
 
@@ -628,4 +645,22 @@ mod tests {
             b"keep"
         );
     }
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_writer_lock_file() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        let outside = TestDirectory::new();
+        let external_lock_target = outside.path().join("external.lock");
+        fs::write(&external_lock_target, b"external").unwrap();
+        symlink(&external_lock_target, directory.path().join(".writer.lock")).unwrap();
+
+        assert!(matches!(
+            FileRecoveryStorage::open(directory.path()),
+            Err(FileRecoveryStorageError::InvalidLockFile)
+        ));
+        assert_eq!(fs::read(&external_lock_target).unwrap(), b"external");
+    }
+
 }
