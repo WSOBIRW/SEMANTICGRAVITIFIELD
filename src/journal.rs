@@ -97,7 +97,10 @@ impl EventValidator {
                 return Err(JournalError::InvalidDigest);
             }
 
-            let mut record = Reader {\n                bytes: payload,\n                pos: 0,\n            };
+            let mut record = Reader {
+                bytes: payload,
+                pos: 0,
+            };
             if record.take(4)? != MAGIC {
                 return Err(JournalError::InvalidMagic);
             }
@@ -130,7 +133,9 @@ impl EventValidator {
                 .checked_add(1)
                 .ok_or(JournalError::LengthOverflow)?;
             checkpoint.last_hash.copy_from_slice(supplied_digest);
-            replayed = replayed\n                .checked_add(1)\n                .ok_or(JournalError::LengthOverflow)?;
+            replayed = replayed
+                .checked_add(1)
+                .ok_or(JournalError::LengthOverflow)?;
         }
 
         Ok(ReplayReport {
@@ -169,13 +174,21 @@ fn encode_event(out: &mut Vec<u8>, event: &MarketEvent) -> Result<(), JournalErr
     }
 
     match &event.payload {
-        EventPayload::Quote {\n            bid_ticks,\n            ask_ticks,\n            price_scale,\n        } => {
+        EventPayload::Quote {
+            bid_ticks,
+            ask_ticks,
+            price_scale,
+        } => {
             out.push(0);
             out.extend_from_slice(&bid_ticks.to_le_bytes());
             out.extend_from_slice(&ask_ticks.to_le_bytes());
             out.extend_from_slice(&price_scale.to_le_bytes());
         }
-        EventPayload::Trade {\n            price_ticks,\n            quantity_lots,\n            price_scale,\n        } => {
+        EventPayload::Trade {
+            price_ticks,
+            quantity_lots,
+            price_scale,
+        } => {
             out.push(1);
             out.extend_from_slice(&price_ticks.to_le_bytes());
             out.extend_from_slice(&quantity_lots.to_le_bytes());
@@ -238,7 +251,10 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn take(&mut self, len: usize) -> Result<&'a [u8], JournalError> {
-        let end = self\n            .pos\n            .checked_add(len)\n            .ok_or(JournalError::LengthOverflow)?;
+        let end = self
+            .pos
+            .checked_add(len)
+            .ok_or(JournalError::LengthOverflow)?;
         if end > self.bytes.len() {
             return Err(JournalError::Truncated);
         }
@@ -252,19 +268,35 @@ impl<'a> Reader<'a> {
     }
 
     fn u16(&mut self) -> Result<u16, JournalError> {
-        Ok(u16::from_le_bytes(\n            self.take(2)?\n                .try_into()\n                .map_err(|_| JournalError::Truncated)?,\n        ))
+        Ok(u16::from_le_bytes(
+            self.take(2)?
+                .try_into()
+                .map_err(|_| JournalError::Truncated)?,
+        ))
     }
 
     fn u32(&mut self) -> Result<u32, JournalError> {
-        Ok(u32::from_le_bytes(\n            self.take(4)?\n                .try_into()\n                .map_err(|_| JournalError::Truncated)?,\n        ))
+        Ok(u32::from_le_bytes(
+            self.take(4)?
+                .try_into()
+                .map_err(|_| JournalError::Truncated)?,
+        ))
     }
 
     fn u64(&mut self) -> Result<u64, JournalError> {
-        Ok(u64::from_le_bytes(\n            self.take(8)?\n                .try_into()\n                .map_err(|_| JournalError::Truncated)?,\n        ))
+        Ok(u64::from_le_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| JournalError::Truncated)?,
+        ))
     }
 
     fn i64(&mut self) -> Result<i64, JournalError> {
-        Ok(i64::from_le_bytes(\n            self.take(8)?\n                .try_into()\n                .map_err(|_| JournalError::Truncated)?,\n        ))
+        Ok(i64::from_le_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| JournalError::Truncated)?,
+        ))
     }
 
     fn string(&mut self) -> Result<String, JournalError> {
@@ -303,7 +335,10 @@ mod tests {
     fn rejects_replayed_segment_from_wrong_anchor() {
         let bytes = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
         let mut validator = EventValidator::new();
-        let wrong = JournalCheckpoint {\n            next_offset: 1,\n            last_hash: [7; DIGEST_LEN],\n        };
+        let wrong = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: [7; DIGEST_LEN],
+        };
         assert!(matches!(
             validator.replay_journal(&bytes, &wrong),
             Err(JournalError::UnexpectedOffset { .. })
@@ -338,7 +373,10 @@ mod tests {
         let snapshot = EventValidator::new().encode_snapshot().unwrap();
         let first = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
         let mut checkpoint = JournalCheckpoint::default();
-        checkpoint = EventValidator::new()\n            .replay_journal(&first, &checkpoint)\n            .unwrap()\n            .checkpoint;
+        checkpoint = EventValidator::new()
+            .replay_journal(&first, &checkpoint)
+            .unwrap()
+            .checkpoint;
         let second = encode_record(&checkpoint, &quote("e2", 2)).unwrap();
 
         let mut segment = first;
@@ -351,21 +389,30 @@ mod tests {
         let mut direct = EventValidator::new();
         direct.validate(&quote("e1", 1)).unwrap();
         direct.validate(&quote("e2", 2)).unwrap();
-        assert_eq!(\n            replayed.encode_snapshot().unwrap(),\n            direct.encode_snapshot().unwrap()\n        );
+        assert_eq!(
+            replayed.encode_snapshot().unwrap(),
+            direct.encode_snapshot().unwrap()
+        );
     }
 
     #[test]
     fn invalid_event_does_not_return_partial_restored_state() {
         let snapshot = EventValidator::new().encode_snapshot().unwrap();
         let valid = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
-        let checkpoint = EventValidator::new()\n            .replay_journal(&valid, &JournalCheckpoint::default())\n            .unwrap()\n            .checkpoint;
+        let checkpoint = EventValidator::new()
+            .replay_journal(&valid, &JournalCheckpoint::default())
+            .unwrap()
+            .checkpoint;
         let invalid = encode_record(&checkpoint, &quote("e1", 2)).unwrap();
         let mut journal = valid;
         journal.extend_from_slice(&invalid);
 
         assert!(matches!(
             EventValidator::restore_and_replay(&snapshot, &journal, &JournalCheckpoint::default()),
-            Err(JournalError::Validation {\n                error: ValidationError::DuplicateEventId,\n                ..\n            })
+            Err(JournalError::Validation {
+                error: ValidationError::DuplicateEventId,
+                ..
+            })
         ));
     }
 }
