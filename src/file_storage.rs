@@ -133,11 +133,15 @@ impl FileRecoveryStorage {
 
     fn read_current(&self) -> Result<Option<RecoveryPackage>, FileRecoveryStorageError> {
         let current_path = self.root.join("CURRENT");
-        let current_bytes = match fs::read(&current_path) {
-            Ok(bytes) => bytes,
+        let current_metadata = match fs::symlink_metadata(&current_path) {
+            Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
+        if !current_metadata.file_type().is_file() || current_metadata.file_type().is_symlink() {
+            return Err(FileRecoveryStorageError::InvalidCurrent);
+        }
+        let current_bytes = fs::read(&current_path)?;
         let pointer = CurrentPointer::decode(&current_bytes)?;
         let generation_dir = self.generation_dir(pointer.generation);
 
