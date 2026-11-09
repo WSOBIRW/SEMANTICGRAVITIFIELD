@@ -431,9 +431,10 @@ mod tests {
     fn replay_is_deterministic_from_snapshot() {
         let snapshot = EventValidator::new().encode_snapshot().unwrap();
         let first = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
-        let mut checkpoint = JournalCheckpoint::default();
-        checkpoint.next_offset = 1;
-        checkpoint.last_hash = first[first.len() - DIGEST_LEN..].try_into().unwrap();
+        let checkpoint = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: first[first.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
         let second = encode_record(&checkpoint, &quote("e2", 2)).unwrap();
         let expected_end = JournalCheckpoint {
             next_offset: 2,
