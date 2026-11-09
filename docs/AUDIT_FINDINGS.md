@@ -13,7 +13,8 @@
 
 ### SGF-AUDIT-001 — Конфигурация ограниченной дедупликации недоступна через ErrorPreventionEngine
 - Приоритет: P2.
-- Статус: OPEN до исправления.
+- Статус: CLOSED в PR #9.
+- Доказательство: merge commit `8b9503524e6dbf152d9dabc5c2233f101eac90ef`; PR CI на merge ref `fd19a8b8ced31340f2110334f86eba9a48065d7e` — fmt, Clippy и тесты PASS.
 - Затронутый компонент: src/prevention.rs.
 - Условие: внешний потребитель использует публичный ErrorPreventionEngine::new()/inspect API.
 - Наблюдение: ErrorPreventionEngine владеет приватным EventValidator, конструктор всегда создаёт его с неограниченной дедупликацией. Публичный потребитель не может выбрать with_dedup_capacity.
@@ -23,7 +24,8 @@
 
 ### SGF-AUDIT-002 — Reset потока недоступен через ErrorPreventionEngine
 - Приоритет: P2.
-- Статус: OPEN до исправления.
+- Статус: CLOSED в PR #9.
+- Доказательство: merge commit `8b9503524e6dbf152d9dabc5c2233f101eac90ef`; PR CI на merge ref `fd19a8b8ced31340f2110334f86eba9a48065d7e` — fmt, Clippy и тесты PASS.
 - Затронутый компонент: src/prevention.rs.
 - Условие: потребитель использует ErrorPreventionEngine::inspect и получает reconnect с перезапуском sequence.
 - Наблюдение: внутренний EventValidator имеет reset_stream, но он приватен внутри ErrorPreventionEngine; публичный EPE API не предоставляет forwarding method.
