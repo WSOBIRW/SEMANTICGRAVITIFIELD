@@ -364,10 +364,10 @@ mod tests {
         let digest = Sha256::digest(&bytes[..payload_len]);
         bytes[payload_len..].copy_from_slice(&digest);
 
-        assert_eq!(
+        assert!(matches!(
             EventValidator::restore_snapshot(&bytes),
             Err(SnapshotError::InvalidCapacity)
-        );
+        ));
     }
 
 }
