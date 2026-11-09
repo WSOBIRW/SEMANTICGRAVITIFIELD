@@ -66,11 +66,7 @@ impl EventValidator {
 
                 payload.push(0);
                 payload.extend_from_slice(&0u64.to_le_bytes());
-                let mut ids: Vec<&str> = self
-                    .seen_event_ids
-                    .iter()
-                    .map(String::as_str)
-                    .collect();
+                let mut ids: Vec<&str> = self.seen_event_ids.iter().map(String::as_str).collect();
                 ids.sort_unstable();
                 put_count(&mut payload, ids.len())?;
                 for id in ids {
@@ -79,8 +75,7 @@ impl EventValidator {
             }
         }
 
-        let mut streams: Vec<(&(String, String), &u64)> =
-            self.last_sequences.iter().collect();
+        let mut streams: Vec<(&(String, String), &u64)> = self.last_sequences.iter().collect();
         streams.sort_unstable_by(|a, b| a.0.cmp(b.0));
         put_count(&mut payload, streams.len())?;
         for ((source, instrument), sequence) in streams {
@@ -125,8 +120,7 @@ impl EventValidator {
         let capacity = match mode {
             0 if capacity_raw == 0 => None,
             1 if capacity_raw > 0 && capacity_raw <= usize::MAX as u64 => Some(
-                NonZeroUsize::new(capacity_raw as usize)
-                    .ok_or(SnapshotError::InvalidCapacity)?,
+                NonZeroUsize::new(capacity_raw as usize).ok_or(SnapshotError::InvalidCapacity)?,
             ),
             0 | 1 => return Err(SnapshotError::InvalidCapacity),
             _ => return Err(SnapshotError::InvalidMode),
@@ -297,8 +291,7 @@ mod tests {
 
     #[test]
     fn snapshot_round_trip_preserves_fifo_and_watermarks() {
-        let mut original =
-            EventValidator::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
+        let mut original = EventValidator::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
         original.validate(&event("a", "s1", "i1", 10)).unwrap();
         original.validate(&event("b", "s1", "i1", 12)).unwrap();
         original.validate(&event("c", "s2", "i2", 7)).unwrap();
