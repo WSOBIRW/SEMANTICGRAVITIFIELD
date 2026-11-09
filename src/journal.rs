@@ -311,8 +311,17 @@ mod tests {
 
     fn quote(id: &str, seq: u64) -> MarketEvent {
         MarketEvent::quote(
-            id, "feed-a", "BTCUSD", 100 + seq as i64, 110 + seq as i64, Some(seq),
-            Quote { bid_ticks: 100, ask_ticks: 101, price_scale: 10 },
+            id,
+            "feed-a",
+            "BTCUSD",
+            100 + seq as i64,
+            110 + seq as i64,
+            Some(seq),
+            Quote {
+                bid_ticks: 100,
+                ask_ticks: 101,
+                price_scale: 10,
+            },
         )
     }
 
@@ -381,9 +390,9 @@ mod tests {
 
         let mut segment = first;
         segment.extend_from_slice(&second);
-        let (replayed, report) = EventValidator::restore_and_replay(
-            &snapshot, &segment, &JournalCheckpoint::default()
-        ).unwrap();
+        let (replayed, report) =
+            EventValidator::restore_and_replay(&snapshot, &segment, &JournalCheckpoint::default())
+                .unwrap();
         assert_eq!(report.records_replayed, 2);
 
         let mut direct = EventValidator::new();
