@@ -307,7 +307,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn bounded_deduplication_rejects_repeats_inside_window() {
         let mut validator = EventValidator::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
@@ -327,7 +326,10 @@ mod tests {
             )
         };
         assert!(validator.validate(&make("e1")).is_ok());
-        assert_eq!(validator.validate(&make("e1")), Err(ValidationError::DuplicateEventId));
+        assert_eq!(
+            validator.validate(&make("e1")),
+            Err(ValidationError::DuplicateEventId)
+        );
     }
 
     #[test]
