@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn package_restores_only_after_all_cross_checks() {
         let package = package();
-        let (validator, report) = package.restore().unwrap();
+        let (mut validator, report) = package.restore().unwrap();
         assert_eq!(report.records_replayed, 1);
         assert_eq!(validator.validate(&quote("e2", 2)), Ok(()));
     }
