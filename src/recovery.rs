@@ -48,6 +48,8 @@ pub enum RecoveryStorageError<E> {
 ///
 /// Backend обязан вызывать эту функцию внутри своей атомарной секции записи,
 /// используя фактическое текущее поколение, прочитанное под той же блокировкой/CAS.
+/// Функция не защищает от rollback всего хранилища относительно внешней доверенной
+/// контрольной точки: такая защита относится к отдельному механизму anti-rollback.
 pub fn validate_generation_transition(
     expected_current: Option<u64>,
     actual_current: Option<u64>,
@@ -403,4 +405,22 @@ mod tests {
         assert_eq!(package.validate(), Ok(()));
         assert_eq!(package.manifest.generation, 1);
     }
+    #[test]
+    fn initial_generation_must_be_exactly_one() {
+        assert_eq!(
+            validate_generation_transition(None, None, 0),
+            Err(RecoveryGenerationError::InvalidNextGeneration {
+                expected: 1,
+                actual: 0,
+            })
+        );
+        assert_eq!(
+            validate_generation_transition(None, None, 2),
+            Err(RecoveryGenerationError::InvalidNextGeneration {
+                expected: 1,
+                actual: 2,
+            })
+        );
+    }
+
 }
