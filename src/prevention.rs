@@ -232,8 +232,7 @@ mod tests {
     }
     #[test]
     fn bounded_deduplication_is_available_through_public_engine_api() {
-        let mut engine =
-            ErrorPreventionEngine::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
+        let mut engine = ErrorPreventionEngine::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
 
         assert!(engine.inspect(&quote("q1", 1)).accepted);
         assert!(engine.inspect(&quote("q2", 2)).accepted);
@@ -259,12 +258,15 @@ mod tests {
             20,
             21,
             Some(2),
-            Quote { bid_ticks: 100, ask_ticks: 101, price_scale: 10 },
+            Quote {
+                bid_ticks: 100,
+                ask_ticks: 101,
+                price_scale: 10,
+            },
         );
         assert_eq!(
             engine.inspect(&duplicate).findings[0].code,
             FindingCode::DuplicateEvent
         );
     }
-
 }
