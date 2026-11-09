@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::event::{EventPayload, MarketEvent};
+#[cfg(test)]
+use crate::event::Quote;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationError {
