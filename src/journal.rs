@@ -503,7 +503,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn replay_preserves_explicit_stream_reset() {
         let first = encode_record(&JournalCheckpoint::default(), &quote("e1", 500)).unwrap();
