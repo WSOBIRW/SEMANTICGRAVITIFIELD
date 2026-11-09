@@ -662,5 +662,4 @@ mod tests {
         ));
         assert_eq!(fs::read(&external_lock_target).unwrap(), b"external");
     }
-
 }
