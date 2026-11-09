@@ -41,6 +41,7 @@
 - Журнал SGFJ v1 с hash chain, checkpoint validation и детерминированным replay поверх snapshot; журналируются события и reset операции.
 - Manifest SGFM v1 и RecoveryPackage, связывающие snapshot digest, длину журнала, anchor и ожидаемый конечный checkpoint.
 - Backend-neutral контракт RecoveryStorage.
+- В разработке: compare-and-swap поколения в RecoveryStorage, стандартные ошибки конфликтов и проверка RecoveryPackage без потребления (PR #10, ожидает CI/ревью).
 - Unit и интеграционные тесты, CI workflow для fmt, Clippy и cargo test.
 
 ## Не реализовано
@@ -49,6 +50,7 @@
 - Атомарная долговечная фиксация поколений, fsync/flush и crash-consistency проверки.
 - Writer coordination и межпроцессная блокировка.
 - Аутентификация manifest и доверенная защита от rollback.
+- Физическое обеспечение CAS и защита от stale writers в конкретном backend (PR #10 меняет только контракт).
 - session_id и автоматизированная семантика reconnect/reset.
 - Out-of-order buffering и политика поздних событий.
 - Полноценная реконструкция рыночного состояния.
