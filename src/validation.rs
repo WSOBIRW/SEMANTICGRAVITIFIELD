@@ -20,8 +20,15 @@ pub enum ValidationError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationWarning {
-    EventClockSkewSuspected { event_time_ms: i64, received_time_ms: i64 },
-    SequenceGap { previous: u64, current: u64, missing: u64 },
+    EventClockSkewSuspected {
+        event_time_ms: i64,
+        received_time_ms: i64,
+    },
+    SequenceGap {
+        previous: u64,
+        current: u64,
+        missing: u64,
+    },
 }
 
 #[derive(Default)]
@@ -68,7 +75,10 @@ impl EventValidator {
         if let Some(current) = event.sequence {
             if let Some(previous) = self.last_sequences.get(&stream_key).copied() {
                 if current <= previous {
-                    return Err(ValidationError::NonIncreasingSequence { previous, current });
+                    return Err(ValidationError::NonIncreasingSequence {
+                        previous,
+                        current,
+                    });
                 }
                 if current - previous > 1 {
                     warnings.push(ValidationWarning::SequenceGap {
@@ -109,7 +119,11 @@ fn validate_static(event: &MarketEvent) -> Result<(), ValidationError> {
     }
 
     match &event.payload {
-        EventPayload::Quote { bid_ticks, ask_ticks, price_scale } => {
+        EventPayload::Quote {
+            bid_ticks,
+            ask_ticks,
+            price_scale,
+        } => {
             if *price_scale == 0 {
                 return Err(ValidationError::InvalidPriceScale);
             }
@@ -120,7 +134,11 @@ fn validate_static(event: &MarketEvent) -> Result<(), ValidationError> {
                 });
             }
         }
-        EventPayload::Trade { price_ticks, quantity_lots, price_scale } => {
+        EventPayload::Trade {
+            price_ticks,
+            quantity_lots,
+            price_scale,
+        } => {
             if *price_scale == 0 {
                 return Err(ValidationError::InvalidPriceScale);
             }
@@ -140,71 +158,143 @@ mod tests {
     use super::*;
     use crate::event::Quote;
 
-    fn quote(id: &str, source: &str, instrument: &str, seq: u64, event_time: i64, received: i64) -> MarketEvent {
-        MarketEvent::quote(id, source, instrument, event_time, received, Some(seq), Quote {
-            bid_ticks: 10_000,
-            ask_ticks: 10_002,
-            price_scale: 100_000,
-        })
+    fn quote(
+        id: &str,
+        source: &str,
+        instrument: &str,
+        seq: u64,
+        event_time: i64,
+        received: i64,
+    ) -> MarketEvent {
+        MarketEvent::quote(
+            id,
+            source,
+            instrument,
+            event_time,
+            received,
+            Some(seq),
+            Quote {
+                bid_ticks: 10_000,
+                ask_ticks: 10_002,
+                price_scale: 100_000,
+            },
+        )
     }
 
     #[test]
     fn accepts_valid_quote() {
-        assert!(EventValidator::new().validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110)).is_ok());
+        assert!(EventValidator::new()
+            .validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110))
+            .is_ok());
     }
 
     #[test]
     fn rejects_duplicate_event_id_globally() {
         let mut validator = EventValidator::new();
-        assert!(validator.validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110)).is_ok());
-        assert_eq!(validator.validate(&quote("e1", "feed-b", "BTCUSD", 1, 100, 110)), Err(ValidationError::DuplicateEventId));
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110))
+            .is_ok());
+        assert_eq!(
+            validator.validate(&quote("e1", "feed-b", "BTCUSD", 1, 100, 110)),
+            Err(ValidationError::DuplicateEventId)
+        );
     }
 
     #[test]
     fn rejects_non_increasing_sequence() {
         let mut validator = EventValidator::new();
-        assert!(validator.validate(&quote("e1", "feed-a", "EURUSD", 8, 100, 110)).is_ok());
-        assert_eq!(validator.validate(&quote("e2", "feed-a", "EURUSD", 8, 100, 110)), Err(ValidationError::NonIncreasingSequence { previous: 8, current: 8 }));
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 8, 100, 110))
+            .is_ok());
+        assert_eq!(
+            validator.validate(&quote("e2", "feed-a", "EURUSD", 8, 100, 110)),
+            Err(ValidationError::NonIncreasingSequence {
+                previous: 8,
+                current: 8
+            })
+        );
     }
 
     #[test]
     fn sequence_gap_is_reported_and_stream_advances() {
         let mut validator = EventValidator::new();
-        validator.validate(&quote("e1", "feed-a", "EURUSD", 10, 100, 110)).unwrap();
-        let warnings = validator.inspect_with_warnings(&quote("e2", "feed-a", "EURUSD", 14, 100, 110)).unwrap();
-        assert_eq!(warnings, vec![ValidationWarning::SequenceGap { previous: 10, current: 14, missing: 3 }]);
-        assert!(validator.validate(&quote("e3", "feed-a", "EURUSD", 15, 100, 110)).is_ok());
+        validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 10, 100, 110))
+            .unwrap();
+        let warnings = validator
+            .inspect_with_warnings(&quote("e2", "feed-a", "EURUSD", 14, 100, 110))
+            .unwrap();
+        assert_eq!(
+            warnings,
+            vec![ValidationWarning::SequenceGap {
+                previous: 10,
+                current: 14,
+                missing: 3
+            }]
+        );
+        assert!(validator
+            .validate(&quote("e3", "feed-a", "EURUSD", 15, 100, 110))
+            .is_ok());
     }
 
     #[test]
     fn sequence_state_is_independent_per_source_and_instrument() {
         let mut validator = EventValidator::new();
-        assert!(validator.validate(&quote("e1", "feed-a", "EURUSD", 100, 100, 110)).is_ok());
-        assert!(validator.validate(&quote("e2", "feed-b", "EURUSD", 1, 100, 110)).is_ok());
-        assert!(validator.validate(&quote("e3", "feed-a", "BTCUSD", 1, 100, 110)).is_ok());
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 100, 100, 110))
+            .is_ok());
+        assert!(validator
+            .validate(&quote("e2", "feed-b", "EURUSD", 1, 100, 110))
+            .is_ok());
+        assert!(validator
+            .validate(&quote("e3", "feed-a", "BTCUSD", 1, 100, 110))
+            .is_ok());
     }
 
     #[test]
     fn future_event_time_is_a_clock_skew_warning_not_proof_of_corruption() {
         let mut validator = EventValidator::new();
-        let warnings = validator.inspect_with_warnings(&quote("e1", "feed-a", "EURUSD", 1, 120, 110)).unwrap();
-        assert_eq!(warnings, vec![ValidationWarning::EventClockSkewSuspected { event_time_ms: 120, received_time_ms: 110 }]);
-        assert!(validator.validate(&quote("e2", "feed-a", "EURUSD", 2, 121, 120)).is_ok());
+        let warnings = validator
+            .inspect_with_warnings(&quote("e1", "feed-a", "EURUSD", 1, 120, 110))
+            .unwrap();
+        assert_eq!(
+            warnings,
+            vec![ValidationWarning::EventClockSkewSuspected {
+                event_time_ms: 120,
+                received_time_ms: 110
+            }]
+        );
+        assert!(validator
+            .validate(&quote("e2", "feed-a", "EURUSD", 2, 121, 120))
+            .is_ok());
     }
 
     #[test]
     fn rejects_crossed_quote() {
         let mut event = quote("e1", "feed-a", "EURUSD", 1, 100, 110);
-        event.payload = EventPayload::Quote { bid_ticks: 10_003, ask_ticks: 10_002, price_scale: 100_000 };
-        assert!(matches!(EventValidator::new().validate(&event), Err(ValidationError::InvalidQuote { .. })));
+        event.payload = EventPayload::Quote {
+            bid_ticks: 10_003,
+            ask_ticks: 10_002,
+            price_scale: 100_000,
+        };
+        assert!(matches!(
+            EventValidator::new().validate(&event),
+            Err(ValidationError::InvalidQuote { .. })
+        ));
     }
 
     #[test]
     fn failed_validation_does_not_consume_event_id_or_sequence() {
         let mut validator = EventValidator::new();
         let mut invalid = quote("e1", "feed-a", "EURUSD", 1, 100, 110);
-        invalid.payload = EventPayload::Quote { bid_ticks: 0, ask_ticks: 1, price_scale: 100_000 };
+        invalid.payload = EventPayload::Quote {
+            bid_ticks: 0,
+            ask_ticks: 1,
+            price_scale: 100_000,
+        };
         assert!(validator.validate(&invalid).is_err());
-        assert!(validator.validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110)).is_ok());
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 1, 100, 110))
+            .is_ok());
     }
 }
