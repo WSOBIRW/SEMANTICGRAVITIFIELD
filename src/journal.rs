@@ -33,14 +33,25 @@ pub enum JournalError {
     InvalidMagic,
     UnsupportedVersion(u16),
     InvalidDigest,
-    BrokenHashChain { offset: u64 },
-    UnexpectedOffset { expected: u64, actual: u64 },
+    BrokenHashChain {
+        offset: u64,
+    },
+    UnexpectedOffset {
+        expected: u64,
+        actual: u64,
+    },
     InvalidUtf8,
     InvalidEventEncoding,
     LengthOverflow,
     Snapshot(crate::SnapshotError),
-    CheckpointMismatch { expected: JournalCheckpoint, actual: JournalCheckpoint },
-    Validation { offset: u64, error: ValidationError },
+    CheckpointMismatch {
+        expected: JournalCheckpoint,
+        actual: JournalCheckpoint,
+    },
+    Validation {
+        offset: u64,
+        error: ValidationError,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -431,14 +442,13 @@ mod tests {
 
         let mut segment = first;
         segment.extend_from_slice(&second);
-        let (replayed, report) =
-            EventValidator::restore_and_replay(
-                &snapshot,
-                &segment,
-                &JournalCheckpoint::default(),
-                &expected_end
-            )
-                .unwrap();
+        let (replayed, report) = EventValidator::restore_and_replay(
+            &snapshot,
+            &segment,
+            &JournalCheckpoint::default(),
+            &expected_end,
+        )
+        .unwrap();
         assert_eq!(report.records_replayed, 2);
 
         let mut direct = EventValidator::new();
