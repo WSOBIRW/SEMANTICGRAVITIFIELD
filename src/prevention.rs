@@ -1,6 +1,4 @@
 use crate::event::MarketEvent;
-#[cfg(test)]
-use crate::event::Quote;
 use crate::validation::{EventValidator, ValidationError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +99,7 @@ fn map_error(error: ValidationError) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::Quote;
 
     fn quote(id: &str) -> MarketEvent {
         MarketEvent::quote(
