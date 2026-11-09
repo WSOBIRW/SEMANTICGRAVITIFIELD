@@ -42,6 +42,9 @@ impl std::fmt::Display for FileRecoveryStorageError {
             Self::InvalidGenerationDirectory => {
                 write!(f, "invalid recovery generation directory")
             }
+            Self::UnreferencedGenerationExists => {
+                write!(f, "generation data exists but CURRENT pointer is missing")
+            }
             Self::ManifestGenerationMismatch { pointer, manifest } => write!(
                 f,
                 "CURRENT generation {pointer} does not match manifest generation {manifest}"
