@@ -64,7 +64,10 @@ impl RecoveryManifest {
             return Err(RecoveryError::InvalidDigest);
         }
 
-        let mut reader = Reader { bytes: payload, pos: 0 };
+        let mut reader = Reader {
+            bytes: payload,
+            pos: 0,
+        };
         if reader.take(4)? != MAGIC {
             return Err(RecoveryError::InvalidMagic);
         }
@@ -73,7 +76,10 @@ impl RecoveryManifest {
             return Err(RecoveryError::UnsupportedVersion(version));
         }
         let generation = reader.u64()?;
-        let snapshot_digest = reader.take(DIGEST_LEN)?.try_into().map_err(|_| RecoveryError::Truncated)?;
+        let snapshot_digest = reader
+            .take(DIGEST_LEN)?
+            .try_into()
+            .map_err(|_| RecoveryError::Truncated)?;
         let journal_bytes = reader.u64()?;
         let anchor = reader.checkpoint()?;
         let expected_end = reader.checkpoint()?;
@@ -149,7 +155,10 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn take(&mut self, len: usize) -> Result<&'a [u8], RecoveryError> {
-        let end = self.pos.checked_add(len).ok_or(RecoveryError::LengthOverflow)?;
+        let end = self
+            .pos
+            .checked_add(len)
+            .ok_or(RecoveryError::LengthOverflow)?;
         if end > self.bytes.len() {
             return Err(RecoveryError::Truncated);
         }
@@ -159,17 +168,31 @@ impl<'a> Reader<'a> {
     }
 
     fn u16(&mut self) -> Result<u16, RecoveryError> {
-        Ok(u16::from_le_bytes(self.take(2)?.try_into().map_err(|_| RecoveryError::Truncated)?))
+        Ok(u16::from_le_bytes(
+            self.take(2)?
+                .try_into()
+                .map_err(|_| RecoveryError::Truncated)?,
+        ))
     }
 
     fn u64(&mut self) -> Result<u64, RecoveryError> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().map_err(|_| RecoveryError::Truncated)?))
+        Ok(u64::from_le_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| RecoveryError::Truncated)?,
+        ))
     }
 
     fn checkpoint(&mut self) -> Result<JournalCheckpoint, RecoveryError> {
         let next_offset = self.u64()?;
-        let last_hash = self.take(DIGEST_LEN)?.try_into().map_err(|_| RecoveryError::Truncated)?;
-        Ok(JournalCheckpoint { next_offset, last_hash })
+        let last_hash = self
+            .take(DIGEST_LEN)?
+            .try_into()
+            .map_err(|_| RecoveryError::Truncated)?;
+        Ok(JournalCheckpoint {
+            next_offset,
+            last_hash,
+        })
     }
 }
 
@@ -186,7 +209,11 @@ mod tests {
             sequence as i64,
             sequence as i64 + 1,
             Some(sequence),
-            Quote { bid_ticks: 100, ask_ticks: 101, price_scale: 10 },
+            Quote {
+                bid_ticks: 100,
+                ask_ticks: 101,
+                price_scale: 10,
+            },
         )
     }
 
@@ -205,7 +232,11 @@ mod tests {
             anchor,
             expected_end,
         };
-        RecoveryPackage { snapshot, journal, manifest }
+        RecoveryPackage {
+            snapshot,
+            journal,
+            manifest,
+        }
     }
 
     #[test]
@@ -213,7 +244,10 @@ mod tests {
         let manifest = package().manifest;
         let encoded = manifest.encode();
         assert_eq!(RecoveryManifest::decode(&encoded).unwrap(), manifest);
-        assert_eq!(RecoveryManifest::decode(&encoded).unwrap().encode(), encoded);
+        assert_eq!(
+            RecoveryManifest::decode(&encoded).unwrap().encode(),
+            encoded
+        );
     }
 
     #[test]
@@ -228,20 +262,29 @@ mod tests {
     fn rejects_manifest_corruption() {
         let mut encoded = package().manifest.encode();
         encoded[12] ^= 1;
-        assert_eq!(RecoveryManifest::decode(&encoded), Err(RecoveryError::InvalidDigest));
+        assert_eq!(
+            RecoveryManifest::decode(&encoded),
+            Err(RecoveryError::InvalidDigest)
+        );
     }
 
     #[test]
     fn rejects_snapshot_manifest_mismatch() {
         let mut package = package();
         package.snapshot[0] ^= 1;
-        assert!(matches!(package.restore(), Err(RecoveryError::InvalidSnapshotDigest)));
+        assert!(matches!(
+            package.restore(),
+            Err(RecoveryError::InvalidSnapshotDigest)
+        ));
     }
 
     #[test]
     fn rejects_journal_truncation_even_at_record_boundary() {
         let mut package = package();
         package.journal.clear();
-        assert!(matches!(package.restore(), Err(RecoveryError::JournalLengthMismatch)));
+        assert!(matches!(
+            package.restore(),
+            Err(RecoveryError::JournalLengthMismatch)
+        ));
     }
 }
