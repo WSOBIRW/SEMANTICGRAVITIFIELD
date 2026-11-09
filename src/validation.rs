@@ -365,7 +365,6 @@ mod tests {
         assert!(validator.validate(&make("e1")).is_ok());
     }
 
-
     #[test]
     fn explicit_stream_reset_allows_sequence_restart() {
         let mut validator = EventValidator::new();
