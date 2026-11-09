@@ -306,7 +306,10 @@ impl RecoveryStorage for FileRecoveryStorage {
             .map_err(RecoveryStorageError::Backend)?;
         let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
         let actual_generation = current.as_ref().map(|value| value.manifest.generation);
-        if actual_generation.is_none() && directory_has_entries(&self.root.join("generations"))? {
+        if actual_generation.is_none()
+            && directory_has_entries(&self.root.join("generations"))
+                .map_err(RecoveryStorageError::Backend)?
+        {
             return Err(RecoveryStorageError::Backend(
                 FileRecoveryStorageError::UnreferencedGenerationExists,
             ));
