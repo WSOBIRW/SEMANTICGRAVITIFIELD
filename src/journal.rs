@@ -519,7 +519,9 @@ mod tests {
         let restarted = encode_record(&checkpoint_after_reset, &quote("e2", 1)).unwrap();
         let expected_end = JournalCheckpoint {
             next_offset: 3,
-            last_hash: restarted[restarted.len() - DIGEST_LEN..].try_into().unwrap(),
+            last_hash: restarted[restarted.len() - DIGEST_LEN..]
+                .try_into()
+                .unwrap(),
         };
 
         let mut journal = first;
