@@ -114,6 +114,7 @@ impl EventValidator {
         let mut previous: Option<String> = None;
         for _ in 0..id_count {
             let id = reader.string()?;
+            if id.trim().is_empty() { return Err(SnapshotError::InvalidOrdering); }
             if !seen_event_ids.insert(id.clone()) { return Err(SnapshotError::DuplicateEventId); }
             if capacity.is_some() {
                 event_id_order.push_back(id);
@@ -134,6 +135,7 @@ impl EventValidator {
         for _ in 0..stream_count {
             let source = reader.string()?;
             let instrument = reader.string()?;
+            if source.trim().is_empty() || instrument.trim().is_empty() { return Err(SnapshotError::InvalidOrdering); }
             let sequence = reader.u64()?;
             let key = (source, instrument);
             if previous_key.as_ref().is_some_and(|p| p >= &key) {
@@ -243,11 +245,11 @@ mod tests {
         v.validate(&event("a", "s", "i", 1)).unwrap();
         let mut bytes = v.encode_snapshot().unwrap();
         bytes[7] ^= 0x40;
-        assert_eq!(EventValidator::restore_snapshot(&bytes), Err(SnapshotError::InvalidDigest));
+        assert!(matches!(EventValidator::restore_snapshot(&bytes), Err(SnapshotError::InvalidDigest)));
     }
 
     #[test]
     fn rejects_truncated_snapshot() {
-        assert_eq!(EventValidator::restore_snapshot(b"SGF"), Err(SnapshotError::Truncated));
+        assert!(matches!(EventValidator::restore_snapshot(b"SGF"), Err(SnapshotError::Truncated)));
     }
 }
