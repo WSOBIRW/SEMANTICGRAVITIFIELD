@@ -14,6 +14,7 @@ pub enum RecoveryError {
     InvalidMagic,
     UnsupportedVersion(u16),
     InvalidDigest,
+    InvalidLength,
     InvalidSnapshotDigest,
     JournalLengthMismatch,
     InvalidCheckpointRange,
@@ -56,7 +57,7 @@ impl RecoveryManifest {
             return Err(RecoveryError::Truncated);
         }
         if bytes.len() != PAYLOAD_LEN + DIGEST_LEN {
-            return Err(RecoveryError::LengthOverflow);
+            return Err(RecoveryError::InvalidLength);
         }
         let (payload, supplied_digest) = bytes.split_at(PAYLOAD_LEN);
         if Sha256::digest(payload).as_slice() != supplied_digest {
@@ -234,13 +235,13 @@ mod tests {
     fn rejects_snapshot_manifest_mismatch() {
         let mut package = package();
         package.snapshot[0] ^= 1;
-        assert_eq!(package.restore(), Err(RecoveryError::InvalidSnapshotDigest));
+        assert!(matches!(package.restore(), Err(RecoveryError::InvalidSnapshotDigest)));
     }
 
     #[test]
     fn rejects_journal_truncation_even_at_record_boundary() {
         let mut package = package();
         package.journal.clear();
-        assert_eq!(package.restore(), Err(RecoveryError::JournalLengthMismatch));
+        assert!(matches!(package.restore(), Err(RecoveryError::JournalLengthMismatch)));
     }
 }
