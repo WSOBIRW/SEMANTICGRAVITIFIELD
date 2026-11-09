@@ -11,5 +11,6 @@ name = "semantic_gravity_field"
 path = "src/lib.rs"
 
 [dependencies]
+sha2 = "0.10"
 
 [dev-dependencies]
