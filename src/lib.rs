@@ -3,18 +3,18 @@
 //! Ядро проверяет входные события и сообщает о проблемах.
 //! Оно не формирует торговые сигналы и не исполняет ордера.
 
+pub mod event;
 #[cfg(unix)]
 pub mod file_storage;
-pub mod event;
 pub mod journal;
 pub mod prevention;
 pub mod recovery;
 pub mod snapshot;
 pub mod validation;
 
+pub use event::{EventPayload, MarketEvent, Quote};
 #[cfg(unix)]
 pub use file_storage::{FileRecoveryStorage, FileRecoveryStorageError};
-pub use event::{EventPayload, MarketEvent, Quote};
 pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
