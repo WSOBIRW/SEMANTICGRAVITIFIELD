@@ -5,8 +5,10 @@
 
 pub mod event;
 pub mod prevention;
+pub mod snapshot;
 pub mod validation;
 
 pub use event::{EventPayload, MarketEvent, Quote};
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
+pub use snapshot::SnapshotError;
 pub use validation::{EventValidator, ValidationError, ValidationWarning};
