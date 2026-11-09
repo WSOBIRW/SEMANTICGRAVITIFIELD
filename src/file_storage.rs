@@ -8,7 +8,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use filelock::FileLock;
 use sha2::{Digest, Sha256};
 
 use crate::recovery::{
@@ -246,7 +245,7 @@ impl RecoveryStorage for FileRecoveryStorage {
         package: RecoveryPackage,
     ) -> Result<(), RecoveryStorageError<Self::Error>> {
         let lock_path = self.root.join(".writer.lock");
-        let mut lock = FileLock::new(&lock_path)
+        let mut lock = filelock::new(&lock_path)
             .map_err(FileRecoveryStorageError::Io)
             .map_err(RecoveryStorageError::Backend)?;
         let _guard = lock
@@ -347,9 +346,6 @@ mod tests {
         let expected_end = JournalCheckpoint {
             next_offset: 1,
             last_hash: journal[journal.len() - DIGEST_LEN..].try_into().unwrap(),
-        };
-        RecoveryPackage {
-            snapshot_digest: (),
         };
         let manifest = RecoveryManifest {
             generation,
