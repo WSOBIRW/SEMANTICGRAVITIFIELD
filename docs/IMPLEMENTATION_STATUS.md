@@ -17,6 +17,7 @@
 - VERIFICATION_CONTRACT.md — независимая проверка и отрицательные контроли.
 - SEMANTIC_INTELLIGENCE.md — исследование структур, гипотезы и пересмотр моделей.
 - DECISION_CONTRACT.md — семантика результатов и защитных вердиктов.
+- AUDIT_FINDINGS.md — первичные findings по реализации PR #2–#8, условия воспроизведения и критерии закрытия.
 
 Эти документы фиксируют целевую архитектуру и нормативные требования. Их наличие не означает, что соответствующие подсистемы уже реализованы.
 
@@ -71,9 +72,9 @@
 
 ## Следующие задачи
 
-1. Провести аудит реализации PR #2–#8 на соответствие архитектурному и доказательному канону.
-2. Зафиксировать расхождения как проверяемые findings с приоритетами и негативными тестами.
-3. Уточнить session identity, temporal semantics, completeness и out-of-order policy.
+1. Закрыть SGF-AUDIT-001, SGF-AUDIT-002 и SGF-AUDIT-003 с регрессионными тестами.
+2. Уточнить session identity, temporal semantics, completeness и out-of-order policy.
+3. Уточнить RecoveryStorage для монотонных поколений, конкурентных writers и rollback protection.
 4. Сравнить файловый generation backend и SQLite по обязательным гарантиям.
 5. Реализовать выбранный storage adapter и crash-consistency тесты.
 6. Начать Reconstruction и Semantic Intelligence после стабилизации контрактов доказательств.
