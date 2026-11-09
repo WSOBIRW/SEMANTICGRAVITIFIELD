@@ -242,7 +242,6 @@ impl FileRecoveryStorage {
                 Err(error) => return Err(error.into()),
             }
 
-
             fs::rename(&stage_dir, &final_dir)?;
             hook(CommitStage::GenerationPublished)?;
             sync_directory(&generations_dir)?;
@@ -290,7 +289,6 @@ impl RecoveryStorage for FileRecoveryStorage {
             .lock()
             .map_err(FileRecoveryStorageError::Io)
             .map_err(RecoveryStorageError::Backend)?;
-
 
         self.cleanup_staging()
             .map_err(RecoveryStorageError::Backend)?;
