@@ -44,16 +44,16 @@
 - Исправление: bounded capacity проверяется до чтения ID; HashSet больше не резервирует память по недоверенному id_count.
 - Проверка: регрессионный тест меняет счётчик, пересчитывает SHA-256 и подтверждает InvalidCapacity.
 
-### SGF-AUDIT-004 — Монотонность recovery generation не обеспечивается формой контракта
+### SGF-AUDIT-004 — Монотонность recovery generation и защита от устаревшей записи
 - Приоритет: P1 перед production storage.
-- Статус: IMPLEMENTATION IN PROGRESS, PR #10.
-- Затронутый компонент: src/recovery.rs, RecoveryManifest и RecoveryStorage.
-- Первоначальное наблюдение: manifest содержит generation, но автономная проверка пакета не может установить, что поколение новее ранее принятого; прежний commit_generation не задавал expected generation.
-- Риск: backend мог опубликовать корректный по хешам, но устаревший generation или потерять обновление при гонке writers.
-- Реализация в PR #10: RecoveryStorage::commit_generation принимает expected_current_generation; добавлены стандартные GenerationConflict, GenerationOverflow и InvalidNextGeneration; добавлена validate_generation_transition; RecoveryPackage::validate позволяет проверить пакет до публикации.
-- Гарантия: compare-and-swap обязан выполняться внутри атомарной секции backend. Чистая функция проверки сама по себе не обеспечивает синхронизацию.
-- Остаётся: дождаться CI и ревью PR #10; затем реализовать и протестировать CAS в конкретном backend. Anti-rollback против отката всего backend требует отдельной доверенной монотонной контрольной точки.
-- Критерий закрытия: backend и контракт тестируют stale writer, конкурирующие commit, rollback и восстановление после сбоя.
+- Статус: PARTIALLY ADDRESSED. Контрактный дефект закрыт в PR #10; атомарная реализация в backend и anti-rollback остаются OPEN.
+- Доказательство контрактной части: merge commit `dc64586895b529b9aa617646f2af326a32c5600f`; CI на точном main SHA — fmt, Clippy и тесты PASS; ревью PR #10 завершено без findings.
+- Затронутые компоненты: src/recovery.rs, RecoveryManifest, RecoveryStorage и будущий физический backend.
+- Первоначальное наблюдение: manifest содержал generation, но commit_generation не задавал expected generation; автономная проверка пакета не могла установить, что поколение новее ранее принятого.
+- Исправление PR #10: commit_generation принимает expected_current_generation; введены GenerationConflict, GenerationOverflow и InvalidNextGeneration; validate_generation_transition проверяет compare-and-swap и строгого successor; RecoveryPackage::validate проверяет пакет без его потребления.
+- Реализованная гарантия: контракт теперь требует проверять фактическое поколение и публиковать successor внутри одной атомарной секции backend. Само наличие helper-функции не обеспечивает межпроцессную синхронизацию.
+- Остаётся OPEN: реализовать CAS под OS lock/транзакцией; проверить два writer с одним expected generation; доказать crash consistency; добавить независимую доверенную monotonic checkpoint для защиты от отката всего хранилища.
+- Критерий полного закрытия: конкретный backend и тесты покрывают stale writer, конкурентные commit, все точки аварии, повреждение и rollback относительно отдельного trust anchor.
 
 ## 5. Исправленные в последующих этапах замечания
 - PR #2: отсутствие диагностики sequence gap устранено в последующей временной семантике; текущий EventValidator выдаёт SequenceGap warning и продвигает watermark.
