@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sha2::{Digest, Sha256};
 
 use crate::recovery::{
-    validate_generation_transition, RecoveryError, RecoveryManifest,
-    RecoveryPackage, RecoveryStorage, RecoveryStorageError,
+    validate_generation_transition, RecoveryError, RecoveryManifest, RecoveryPackage,
+    RecoveryStorage, RecoveryStorageError,
 };
 
 const CURRENT_MAGIC: &[u8; 4] = b"SGFC";
@@ -343,7 +343,8 @@ fn sync_directory(path: &Path) -> Result<(), io::Error> {
 mod tests {
     use super::*;
     use crate::{
-        encode_record, EventValidator, JournalCheckpoint, MarketEvent, Quote, RecoveryGenerationError, RecoveryManifest,
+        encode_record, EventValidator, JournalCheckpoint, MarketEvent, Quote,
+        RecoveryGenerationError, RecoveryManifest,
     };
     use std::sync::{Arc, Barrier};
     use std::thread;
