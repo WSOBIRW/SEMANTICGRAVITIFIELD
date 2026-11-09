@@ -15,6 +15,9 @@ pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
-pub use recovery::{RecoveryError, RecoveryManifest, RecoveryPackage, RecoveryStorage};
+pub use recovery::{
+    validate_generation_transition, RecoveryError, RecoveryGenerationError, RecoveryManifest,
+    RecoveryPackage, RecoveryStorage, RecoveryStorageError,
+};
 pub use snapshot::SnapshotError;
 pub use validation::{EventValidator, ValidationError, ValidationWarning};
