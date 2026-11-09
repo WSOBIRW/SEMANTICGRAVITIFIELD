@@ -71,7 +71,34 @@ pub fn encode_record(
     body.extend_from_slice(&VERSION.to_le_bytes());
     body.extend_from_slice(&checkpoint.next_offset.to_le_bytes());
     body.extend_from_slice(&checkpoint.last_hash);
+    body.push(0);
     encode_event(&mut body, event)?;
+
+    let digest = Sha256::digest(&body);
+    body.extend_from_slice(&digest);
+
+    let len = u32::try_from(body.len()).map_err(|_| JournalError::LengthOverflow)?;
+    let mut framed = Vec::with_capacity(4 + body.len());
+    framed.extend_from_slice(&len.to_le_bytes());
+    framed.extend_from_slice(&body);
+    Ok(framed)
+}
+
+/// Кодирует явную операцию сброса sequence-watermark потока.
+/// Такая запись обязательна для точного replay reconnect-сценариев.
+pub fn encode_reset_record(
+    checkpoint: &JournalCheckpoint,
+    source_id: &str,
+    instrument_id: &str,
+) -> Result<Vec<u8>, JournalError> {
+    let mut body = Vec::new();
+    body.extend_from_slice(MAGIC);
+    body.extend_from_slice(&VERSION.to_le_bytes());
+    body.extend_from_slice(&checkpoint.next_offset.to_le_bytes());
+    body.extend_from_slice(&checkpoint.last_hash);
+    body.push(1);
+    put_string(&mut body, source_id)?;
+    put_string(&mut body, instrument_id)?;
 
     let digest = Sha256::digest(&body);
     body.extend_from_slice(&digest);
@@ -133,13 +160,28 @@ impl EventValidator {
                 return Err(JournalError::BrokenHashChain { offset });
             }
 
-            let event = decode_event(&mut record)?;
-            if record.pos != payload.len() {
-                return Err(JournalError::InvalidEventEncoding);
+            match record.u8()? {
+                0 => {
+                    let event = decode_event(&mut record)?;
+                    if record.pos != payload.len() {
+                        return Err(JournalError::InvalidEventEncoding);
+                    }
+                    self.inspect_with_warnings(&event)
+                        .map_err(|error| JournalError::Validation { offset, error })?;
+                }
+                1 => {
+                    let source_id = record.string()?;
+                    let instrument_id = record.string()?;
+                    if record.pos != payload.len()
+                        || source_id.trim().is_empty()
+                        || instrument_id.trim().is_empty()
+                    {
+                        return Err(JournalError::InvalidEventEncoding);
+                    }
+                    self.reset_stream(&source_id, &instrument_id);
+                }
+                _ => return Err(JournalError::InvalidEventEncoding),
             }
-
-            self.inspect_with_warnings(&event)
-                .map_err(|error| JournalError::Validation { offset, error })?;
 
             checkpoint.next_offset = checkpoint
                 .next_offset
@@ -455,6 +497,49 @@ mod tests {
         let mut direct = EventValidator::new();
         direct.validate(&quote("e1", 1)).unwrap();
         direct.validate(&quote("e2", 2)).unwrap();
+        assert_eq!(
+            replayed.encode_snapshot().unwrap(),
+            direct.encode_snapshot().unwrap()
+        );
+    }
+
+
+    #[test]
+    fn replay_preserves_explicit_stream_reset() {
+        let first = encode_record(&JournalCheckpoint::default(), &quote("e1", 500)).unwrap();
+        let checkpoint_after_first = JournalCheckpoint {
+            next_offset: 1,
+            last_hash: first[first.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
+        let reset = encode_reset_record(&checkpoint_after_first, "feed-a", "BTCUSD").unwrap();
+        let checkpoint_after_reset = JournalCheckpoint {
+            next_offset: 2,
+            last_hash: reset[reset.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
+        let restarted = encode_record(&checkpoint_after_reset, &quote("e2", 1)).unwrap();
+        let expected_end = JournalCheckpoint {
+            next_offset: 3,
+            last_hash: restarted[restarted.len() - DIGEST_LEN..].try_into().unwrap(),
+        };
+
+        let mut journal = first;
+        journal.extend_from_slice(&reset);
+        journal.extend_from_slice(&restarted);
+
+        let snapshot = EventValidator::new().encode_snapshot().unwrap();
+        let (replayed, report) = EventValidator::restore_and_replay(
+            &snapshot,
+            &journal,
+            &JournalCheckpoint::default(),
+            &expected_end,
+        )
+        .unwrap();
+        assert_eq!(report.records_replayed, 3);
+
+        let mut direct = EventValidator::new();
+        direct.validate(&quote("e1", 500)).unwrap();
+        assert!(direct.reset_stream("feed-a", "BTCUSD"));
+        direct.validate(&quote("e2", 1)).unwrap();
         assert_eq!(
             replayed.encode_snapshot().unwrap(),
             direct.encode_snapshot().unwrap()
