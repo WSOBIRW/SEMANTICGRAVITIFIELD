@@ -131,6 +131,16 @@ pub struct FileRecoveryStorage {
 impl FileRecoveryStorage {
     /// Открывает локальное хранилище и создаёт необходимые каталоги.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, FileRecoveryStorageError> {
+        Self::open_with_hook(root, |_| Ok(()))
+    }
+
+    fn open_with_hook<F>(
+        root: impl AsRef<Path>,
+        mut hook: F,
+    ) -> Result<Self, FileRecoveryStorageError>
+    where
+        F: FnMut(CommitStage) -> io::Result<()>,
+    {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root)?;
         ensure_real_directory(&root)?;
@@ -138,6 +148,12 @@ impl FileRecoveryStorage {
         fs::create_dir_all(root.join(".staging"))?;
         ensure_real_directory(&root.join("generations"))?;
         ensure_real_directory(&root.join(".staging"))?;
+
+        // Persist both directory entries before any commit can publish CURRENT.
+        // Otherwise a power loss could preserve CURRENT while losing "generations/".
+        sync_directory(&root)?;
+        hook(CommitStage::LayoutDirectoriesSynced)?;
+
         let lock_path = root.join(".writer.lock");
         match OpenOptions::new()
             .read(true)
@@ -351,6 +367,7 @@ impl RecoveryStorage for FileRecoveryStorage {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CommitStage {
+    LayoutDirectoriesSynced,
     StagingCreated,
     SnapshotSynced,
     JournalSynced,
@@ -459,6 +476,24 @@ mod tests {
             journal,
             manifest,
         }
+    }
+
+    #[test]
+    fn layout_directories_are_synced_before_open_continues() {
+        let directory = TestDirectory::new();
+        let mut hook_called = false;
+
+        let result = FileRecoveryStorage::open_with_hook(directory.path(), |stage| {
+            assert_eq!(stage, CommitStage::LayoutDirectoriesSynced);
+            assert!(directory.path().join("generations").is_dir());
+            assert!(directory.path().join(".staging").is_dir());
+            hook_called = true;
+            Err(io::Error::new(io::ErrorKind::Other, "injected after layout sync"))
+        });
+
+        assert!(result.is_err());
+        assert!(hook_called);
+        assert!(!directory.path().join(".writer.lock").exists());
     }
 
     #[test]
