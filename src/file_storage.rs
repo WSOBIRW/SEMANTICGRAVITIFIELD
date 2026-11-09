@@ -172,10 +172,37 @@ impl FileRecoveryStorage {
         Ok(Some(package))
     }
 
+
+    fn cleanup_staging(&self) -> Result<(), FileRecoveryStorageError> {
+        let staging_root = self.root.join(".staging");
+        for entry in fs::read_dir(&staging_root)? {
+            let path = entry?.path();
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+                fs::remove_dir_all(path)?;
+            } else {
+                fs::remove_file(path)?;
+            }
+        }
+        sync_directory(&staging_root)?;
+        Ok(())
+    }
+
     fn publish(
         &self,
         package: RecoveryPackage,
     ) -> Result<(), FileRecoveryStorageError> {
+        self.publish_with_hook(package, |_| Ok(()))
+    }
+
+    fn publish_with_hook<F>(
+        &self,
+        package: RecoveryPackage,
+        mut hook: F,
+    ) -> Result<(), FileRecoveryStorageError>
+    where
+        F: FnMut(CommitStage) -> io::Result<()>,
+    {
         let generation = package.manifest.generation;
         let generations_dir = self.root.join("generations");
         let staging_root = self.root.join(".staging");
@@ -191,12 +218,18 @@ impl FileRecoveryStorage {
         ));
 
         let result = (|| {
+
             fs::create_dir(&stage_dir)?;
+            hook(CommitStage::StagingCreated)?;
             write_new_sync(&stage_dir.join("snapshot.bin"), &package.snapshot)?;
+            hook(CommitStage::SnapshotSynced)?;
             write_new_sync(&stage_dir.join("journal.bin"), &package.journal)?;
+            hook(CommitStage::JournalSynced)?;
             let manifest_bytes = package.manifest.encode();
             write_new_sync(&stage_dir.join("manifest.bin"), &manifest_bytes)?;
+            hook(CommitStage::ManifestSynced)?;
             sync_directory(&stage_dir)?;
+            hook(CommitStage::StagingDirectorySynced)?;
 
             // candidate generation is expected to be the immediate successor.
             // An existing target can only be an orphan from a previous interrupted commit.
@@ -211,16 +244,23 @@ impl FileRecoveryStorage {
                 Err(error) => return Err(error.into()),
             }
 
+
             fs::rename(&stage_dir, &final_dir)?;
+            hook(CommitStage::GenerationPublished)?;
             sync_directory(&generations_dir)?;
+            hook(CommitStage::GenerationsDirectorySynced)?;
 
             let pointer = CurrentPointer {
                 generation,
                 manifest_digest: Sha256::digest(&manifest_bytes).into(),
             };
+
             write_new_sync(&current_temp, &pointer.encode())?;
+            hook(CommitStage::CurrentSynced)?;
             fs::rename(&current_temp, self.root.join("CURRENT"))?;
+            hook(CommitStage::CurrentPublished)?;
             sync_directory(&self.root)?;
+            hook(CommitStage::RootDirectorySynced)?;
             Ok(())
         })();
 
@@ -253,6 +293,9 @@ impl RecoveryStorage for FileRecoveryStorage {
             .map_err(FileRecoveryStorageError::Io)
             .map_err(RecoveryStorageError::Backend)?;
 
+
+        self.cleanup_staging()
+            .map_err(RecoveryStorageError::Backend)?;
         let current = self
             .read_current()
             .map_err(RecoveryStorageError::Backend)?;
@@ -271,6 +314,20 @@ impl RecoveryStorage for FileRecoveryStorage {
         self.publish(package)
             .map_err(RecoveryStorageError::Backend)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommitStage {
+    StagingCreated,
+    SnapshotSynced,
+    JournalSynced,
+    ManifestSynced,
+    StagingDirectorySynced,
+    GenerationPublished,
+    GenerationsDirectorySynced,
+    CurrentSynced,
+    CurrentPublished,
+    RootDirectorySynced,
 }
 
 fn write_new_sync(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
@@ -456,4 +513,55 @@ mod tests {
             Err(FileRecoveryStorageError::InvalidCurrent)
         ));
     }
+    #[test]
+    fn interrupted_commit_never_exposes_a_partial_generation() {
+        let stages = [
+            CommitStage::StagingCreated,
+            CommitStage::SnapshotSynced,
+            CommitStage::JournalSynced,
+            CommitStage::ManifestSynced,
+            CommitStage::StagingDirectorySynced,
+            CommitStage::GenerationPublished,
+            CommitStage::GenerationsDirectorySynced,
+            CommitStage::CurrentSynced,
+            CommitStage::CurrentPublished,
+            CommitStage::RootDirectorySynced,
+        ];
+
+        for fail_stage in stages {
+            let directory = TestDirectory::new();
+            let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+            storage.commit_generation(None, package(1)).unwrap();
+
+            let result = storage.publish_with_hook(package(2), |stage| {
+                if stage == fail_stage {
+                    Err(io::Error::new(io::ErrorKind::Other, "injected crash"))
+                } else {
+                    Ok(())
+                }
+            });
+            assert!(result.is_err(), "stage {fail_stage:?} must inject failure");
+
+            let current = storage.load_current().unwrap().unwrap();
+            let expected_generation = if matches!(
+                fail_stage,
+                CommitStage::CurrentPublished | CommitStage::RootDirectorySynced
+            ) {
+                2
+            } else {
+                1
+            };
+            assert_eq!(current.manifest.generation, expected_generation);
+
+            // Следующая запись должна удалить staging/orphan и продолжить с актуального поколения.
+            if expected_generation == 1 {
+                storage.commit_generation(Some(1), package(2)).unwrap();
+            }
+            assert_eq!(
+                storage.load_current().unwrap().unwrap().manifest.generation,
+                2
+            );
+        }
+    }
+
 }
