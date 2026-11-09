@@ -75,10 +75,7 @@ impl EventValidator {
         if let Some(current) = event.sequence {
             if let Some(previous) = self.last_sequences.get(&stream_key).copied() {
                 if current <= previous {
-                    return Err(ValidationError::NonIncreasingSequence {
-                        previous,
-                        current,
-                    });
+                    return Err(ValidationError::NonIncreasingSequence { previous, current });
                 }
                 if current - previous > 1 {
                     warnings.push(ValidationWarning::SequenceGap {
