@@ -176,7 +176,6 @@ impl FileRecoveryStorage {
         Ok(Some(package))
     }
 
-
     fn cleanup_staging(&self) -> Result<(), FileRecoveryStorageError> {
         let staging_root = self.root.join(".staging");
         for entry in fs::read_dir(&staging_root)? {
@@ -192,10 +191,7 @@ impl FileRecoveryStorage {
         Ok(())
     }
 
-    fn publish(
-        &self,
-        package: RecoveryPackage,
-    ) -> Result<(), FileRecoveryStorageError> {
+    fn publish(&self, package: RecoveryPackage) -> Result<(), FileRecoveryStorageError> {
         self.publish_with_hook(package, |_| Ok(()))
     }
 
@@ -216,13 +212,11 @@ impl FileRecoveryStorage {
             std::process::id()
         ));
         let final_dir = self.generation_dir(generation);
-        let current_temp = self.root.join(format!(
-            ".CURRENT-p{}-{token}",
-            std::process::id()
-        ));
+        let current_temp = self
+            .root
+            .join(format!(".CURRENT-p{}-{token}", std::process::id()));
 
         let result = (|| {
-
             fs::create_dir(&stage_dir)?;
             hook(CommitStage::StagingCreated)?;
             write_new_sync(&stage_dir.join("snapshot.bin"), &package.snapshot)?;
@@ -300,9 +294,7 @@ impl RecoveryStorage for FileRecoveryStorage {
 
         self.cleanup_staging()
             .map_err(RecoveryStorageError::Backend)?;
-        let current = self
-            .read_current()
-            .map_err(RecoveryStorageError::Backend)?;
+        let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
         let actual_generation = current.as_ref().map(|value| value.manifest.generation);
         validate_generation_transition(
             expected_current_generation,
@@ -315,8 +307,7 @@ impl RecoveryStorage for FileRecoveryStorage {
             .validate()
             .map_err(RecoveryStorageError::InvalidPackage)?;
 
-        self.publish(package)
-            .map_err(RecoveryStorageError::Backend)
+        self.publish(package).map_err(RecoveryStorageError::Backend)
     }
 }
 
@@ -335,10 +326,7 @@ enum CommitStage {
 }
 
 fn write_new_sync(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
     file.write_all(bytes)?;
     file.sync_all()
 }
@@ -365,10 +353,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "sgf-file-storage-{}-{nonce}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("sgf-file-storage-{}-{nonce}", std::process::id()));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -445,12 +431,10 @@ mod tests {
         let error = storage.commit_generation(Some(1), package(2)).unwrap_err();
         assert!(matches!(
             error,
-            RecoveryStorageError::Generation(
-                RecoveryGenerationError::GenerationConflict {
-                    expected_current: Some(1),
-                    actual_current: Some(2)
-                }
-            )
+            RecoveryStorageError::Generation(RecoveryGenerationError::GenerationConflict {
+                expected_current: Some(1),
+                actual_current: Some(2)
+            })
         ));
 
         assert_eq!(
@@ -567,5 +551,4 @@ mod tests {
             );
         }
     }
-
 }
