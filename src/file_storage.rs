@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sha2::{Digest, Sha256};
 
 use crate::recovery::{
-    validate_generation_transition, RecoveryError, RecoveryGenerationError, RecoveryManifest,
+    validate_generation_transition, RecoveryError, RecoveryManifest,
     RecoveryPackage, RecoveryStorage, RecoveryStorageError,
 };
 
@@ -56,6 +56,12 @@ impl std::error::Error for FileRecoveryStorageError {}
 impl From<io::Error> for FileRecoveryStorageError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
+    }
+}
+
+impl From<RecoveryError> for FileRecoveryStorageError {
+    fn from(value: RecoveryError) -> Self {
+        Self::Recovery(value)
     }
 }
 
