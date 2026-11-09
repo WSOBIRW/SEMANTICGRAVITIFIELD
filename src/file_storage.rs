@@ -28,6 +28,7 @@ pub enum FileRecoveryStorageError {
     Io(io::Error),
     InvalidCurrent,
     InvalidGenerationDirectory,
+    UnreferencedGenerationExists,
     ManifestGenerationMismatch { pointer: u64, manifest: u64 },
     ManifestDigestMismatch,
     Recovery(RecoveryError),
@@ -126,8 +127,12 @@ impl FileRecoveryStorage {
     /// Открывает локальное хранилище и создаёт необходимые каталоги.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, FileRecoveryStorageError> {
         let root = root.as_ref().to_path_buf();
+        fs::create_dir_all(&root)?;
+        ensure_real_directory(&root)?;
         fs::create_dir_all(root.join("generations"))?;
         fs::create_dir_all(root.join(".staging"))?;
+        ensure_real_directory(&root.join("generations"))?;
+        ensure_real_directory(&root.join(".staging"))?;
         Ok(Self { root })
     }
 
@@ -184,6 +189,7 @@ impl FileRecoveryStorage {
 
     fn cleanup_staging(&self) -> Result<(), FileRecoveryStorageError> {
         let staging_root = self.root.join(".staging");
+        ensure_real_directory(&staging_root)?;
         for entry in fs::read_dir(&staging_root)? {
             let path = entry?.path();
             let metadata = fs::symlink_metadata(&path)?;
@@ -300,6 +306,11 @@ impl RecoveryStorage for FileRecoveryStorage {
             .map_err(RecoveryStorageError::Backend)?;
         let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
         let actual_generation = current.as_ref().map(|value| value.manifest.generation);
+        if actual_generation.is_none() && directory_has_entries(&self.root.join("generations"))? {
+            return Err(RecoveryStorageError::Backend(
+                FileRecoveryStorageError::UnreferencedGenerationExists,
+            ));
+        }
         validate_generation_transition(
             expected_current_generation,
             actual_generation,
@@ -327,6 +338,20 @@ enum CommitStage {
     CurrentSynced,
     CurrentPublished,
     RootDirectorySynced,
+}
+
+fn ensure_real_directory(path: &Path) -> Result<(), FileRecoveryStorageError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+        Ok(())
+    } else {
+        Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+    }
+}
+
+fn directory_has_entries(path: &Path) -> Result<bool, FileRecoveryStorageError> {
+    ensure_real_directory(path)?;
+    Ok(fs::read_dir(path)?.next().is_some())
 }
 
 fn write_new_sync(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
@@ -556,4 +581,46 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn missing_current_does_not_allow_overwriting_existing_generation() {
+        let directory = TestDirectory::new();
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        fs::remove_file(directory.path().join("CURRENT")).unwrap();
+
+        assert!(matches!(
+            storage.commit_generation(None, package(1)),
+            Err(RecoveryStorageError::Backend(
+                FileRecoveryStorageError::UnreferencedGenerationExists
+            ))
+        ));
+        assert!(directory
+            .path()
+            .join("generations")
+            .join("g-00000000000000000001")
+            .join("manifest.bin")
+            .exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_staging_directory_without_touching_target() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        let outside = TestDirectory::new();
+        fs::write(outside.path().join("preserve.txt"), b"keep").unwrap();
+        symlink(outside.path(), directory.path().join(".staging")).unwrap();
+
+        assert!(matches!(
+            FileRecoveryStorage::open(directory.path()),
+            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+        ));
+        assert_eq!(
+            fs::read(outside.path().join("preserve.txt")).unwrap(),
+            b"keep"
+        );
+    }
+
 }
