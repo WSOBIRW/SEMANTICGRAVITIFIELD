@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::event::{EventPayload, MarketEvent};
-#[cfg(test)]
-use crate::event::Quote;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationError {
@@ -122,6 +120,7 @@ fn validate_static(event: &MarketEvent) -> Result<(), ValidationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::Quote;
 
     fn quote(id: &str, seq: u64) -> MarketEvent {
         MarketEvent::quote(
