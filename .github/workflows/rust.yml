@@ -1,0 +1,33 @@
+name: Проверки Rust
+
+on:
+  push:
+    branches:
+      - main
+      - foundation/**
+      - implementation/**
+  pull_request:
+    branches:
+      - main
+      - foundation/**
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Форматирование, Clippy и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+      - name: Установить стабильный Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Проверить форматирование
+        run: cargo fmt --all -- --check
+      - name: Проверить Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Запустить тесты
+        run: cargo test --all-targets --all-features

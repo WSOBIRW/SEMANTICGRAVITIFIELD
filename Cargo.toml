@@ -1,0 +1,15 @@
+[package]
+name = "semantic-gravity-field"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Независимое ядро проверки рыночных событий и предотвращения ошибок SGF"
+license = "UNLICENSED"
+
+[lib]
+name = "semantic_gravity_field"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
