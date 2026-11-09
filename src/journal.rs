@@ -410,12 +410,10 @@ mod tests {
             Err(JournalError::Truncated)
         ));
 
-        let complete_record = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
         assert!(matches!(
             validator.replay_journal(&[], &JournalCheckpoint::default(), &expected_end),
             Err(JournalError::CheckpointMismatch { .. })
         ));
-        assert!(!complete_record.is_empty());
     }
 
     #[test]
