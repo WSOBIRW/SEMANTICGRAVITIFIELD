@@ -38,6 +38,7 @@ pub enum JournalError {
     InvalidUtf8,
     InvalidEventEncoding,
     LengthOverflow,
+    Snapshot(crate::SnapshotError),
     Validation { offset: u64, error: ValidationError },
 }
 
@@ -145,7 +146,7 @@ impl EventValidator {
         journal: &[u8],
         anchor: &JournalCheckpoint,
     ) -> Result<(Self, ReplayReport), JournalError> {
-        let mut validator = Self::restore_snapshot(snapshot).map_err(|_| JournalError::InvalidEventEncoding)?;
+        let mut validator = Self::restore_snapshot(snapshot).map_err(JournalError::Snapshot)?;
         let report = validator.replay_journal(journal, anchor)?;
         Ok((validator, report))
     }
