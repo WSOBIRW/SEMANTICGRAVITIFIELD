@@ -46,12 +46,14 @@
 
 ### SGF-AUDIT-004 — Монотонность recovery generation не обеспечивается формой контракта
 - Приоритет: P1 перед production storage.
-- Статус: OPEN — архитектурный контракт/будущий backend.
-- Затронутый компонент: RecoveryManifest и RecoveryStorage.
-- Наблюдение: manifest содержит generation, но RecoveryPackage::restore проверяет digest/длину/checkpoint и не может установить, что поколение новее ранее принятого. RecoveryStorage::commit_generation не задаёт compare-and-swap/expected generation и явное поведение при конкурентном или устаревшем commit.
-- Риск: backend может опубликовать корректный по хешам, но устаревший generation или потерять обновление при гонке writers.
-- Требуемое исправление: до production backend определить атомарную политику единственного писателя либо optimistic concurrency с ожидаемым предыдущим generation; закрепить монотонность и rollback policy в контракте. Проверка generation выполняется относительно доверенного текущего состояния, а не только внутри автономного manifest.
-- Критерий закрытия: контракт и backend тестируют stale writer, конкурирующие commit, rollback и восстановление после сбоя.
+- Статус: IMPLEMENTATION IN PROGRESS, PR #10.
+- Затронутый компонент: src/recovery.rs, RecoveryManifest и RecoveryStorage.
+- Первоначальное наблюдение: manifest содержит generation, но автономная проверка пакета не может установить, что поколение новее ранее принятого; прежний commit_generation не задавал expected generation.
+- Риск: backend мог опубликовать корректный по хешам, но устаревший generation или потерять обновление при гонке writers.
+- Реализация в PR #10: RecoveryStorage::commit_generation принимает expected_current_generation; добавлены стандартные GenerationConflict, GenerationOverflow и InvalidNextGeneration; добавлена validate_generation_transition; RecoveryPackage::validate позволяет проверить пакет до публикации.
+- Гарантия: compare-and-swap обязан выполняться внутри атомарной секции backend. Чистая функция проверки сама по себе не обеспечивает синхронизацию.
+- Остаётся: дождаться CI и ревью PR #10; затем реализовать и протестировать CAS в конкретном backend. Anti-rollback против отката всего backend требует отдельной доверенной монотонной контрольной точки.
+- Критерий закрытия: backend и контракт тестируют stale writer, конкурирующие commit, rollback и восстановление после сбоя.
 
 ## 5. Исправленные в последующих этапах замечания
 - PR #2: отсутствие диагностики sequence gap устранено в последующей временной семантике; текущий EventValidator выдаёт SequenceGap warning и продвигает watermark.
