@@ -6,6 +6,7 @@
 pub mod event;
 pub mod journal;
 pub mod prevention;
+pub mod recovery;
 pub mod snapshot;
 pub mod validation;
 
@@ -14,5 +15,6 @@ pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
+pub use recovery::{RecoveryError, RecoveryManifest, RecoveryPackage, RecoveryStorage};
 pub use snapshot::SnapshotError;
 pub use validation::{EventValidator, ValidationError, ValidationWarning};
