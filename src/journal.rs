@@ -384,7 +384,14 @@ mod tests {
         bytes[last] ^= 1;
         let mut validator = EventValidator::new();
         assert_eq!(
-            validator.replay_journal(&bytes, &JournalCheckpoint::default(), &JournalCheckpoint {\n                next_offset: 1,\n                last_hash: bytes[bytes.len() - DIGEST_LEN..].try_into().unwrap(),\n            }),
+            validator.replay_journal(
+                &bytes,
+                &JournalCheckpoint::default(),
+                &JournalCheckpoint {
+                    next_offset: 1,
+                    last_hash: bytes[bytes.len() - DIGEST_LEN..].try_into().unwrap(),
+                }
+            ),
             Err(JournalError::InvalidDigest)
         );
     }
@@ -402,6 +409,13 @@ mod tests {
             validator.replay_journal(&bytes, &JournalCheckpoint::default(), &expected_end),
             Err(JournalError::Truncated)
         ));
+
+        let complete_record = encode_record(&JournalCheckpoint::default(), &quote("e1", 1)).unwrap();
+        assert!(matches!(
+            validator.replay_journal(&[], &JournalCheckpoint::default(), &expected_end),
+            Err(JournalError::CheckpointMismatch { .. })
+        ));
+        assert!(!complete_record.is_empty());
     }
 
     #[test]
