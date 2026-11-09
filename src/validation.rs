@@ -57,6 +57,15 @@ impl EventValidator {
         }
     }
 
+    /// Сбрасывает watermark sequence для одного потока при подтверждённом reconnect.
+    /// Дедупликация event_id намеренно не сбрасывается: её область глобальна для экземпляра.
+    /// Вызывающая сторона обязана удостовериться, что старый поток действительно завершён.
+    pub fn reset_stream(&mut self, source_id: &str, instrument_id: &str) -> bool {
+        self.last_sequences
+            .remove(&(source_id.to_owned(), instrument_id.to_owned()))
+            .is_some()
+    }
+
     fn remember_event_id(&mut self, event_id: &str) {
         self.seen_event_ids.insert(event_id.to_owned());
         if let Some(capacity) = self.dedup_capacity {
@@ -354,6 +363,38 @@ mod tests {
         assert!(validator.validate(&make("e2")).is_ok());
         assert!(validator.validate(&make("e3")).is_ok());
         assert!(validator.validate(&make("e1")).is_ok());
+    }
+
+    #[test]
+    fn explicit_stream_reset_allows_sequence_restart() {
+        let mut validator = EventValidator::new();
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 500, 100, 110))
+            .is_ok());
+        assert!(validator.reset_stream("feed-a", "EURUSD"));
+        assert!(validator
+            .validate(&quote("e2", "feed-a", "EURUSD", 1, 100, 110))
+            .is_ok());
+    }
+
+    #[test]
+    fn stream_reset_does_not_reset_other_streams_or_global_deduplication() {
+        let mut validator = EventValidator::new();
+        assert!(validator
+            .validate(&quote("e1", "feed-a", "EURUSD", 500, 100, 110))
+            .is_ok());
+        assert!(validator
+            .validate(&quote("e2", "feed-a", "BTCUSD", 500, 100, 110))
+            .is_ok());
+        assert!(validator.reset_stream("feed-a", "EURUSD"));
+        assert!(validator
+            .validate(&quote("e3", "feed-a", "BTCUSD", 501, 100, 110))
+            .is_ok());
+        assert_eq!(
+            validator.validate(&quote("e1", "feed-b", "EURUSD", 1, 100, 110)),
+            Err(ValidationError::DuplicateEventId)
+        );
+        assert!(!validator.reset_stream("unknown", "EURUSD"));
     }
 
     #[test]
