@@ -8,5 +8,5 @@ pub mod prevention;
 pub mod validation;
 
 pub use event::{EventPayload, MarketEvent, Quote};
-pub use prevention::{Finding, FindingCode, PreventionReport, Severity};
+pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
 pub use validation::{EventValidator, ValidationError};
