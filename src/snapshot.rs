@@ -226,6 +226,10 @@ mod tests {
         assert_eq!(bytes, restored.encode_snapshot().unwrap());
         assert_eq!(restored.validate(&event("b", "s3", "i3", 1)), Err(crate::ValidationError::DuplicateEventId));
         assert_eq!(restored.validate(&event("a", "s3", "i3", 1)), Ok(()));
+        assert_eq!(
+            restored.validate(&event("old-sequence", "s1", "i1", 11)),
+            Err(crate::ValidationError::NonIncreasingSequence { previous: 12, current: 11 })
+        );
         assert_eq!(restored.validate(&event("next", "s1", "i1", 13)), Ok(()));
     }
 
