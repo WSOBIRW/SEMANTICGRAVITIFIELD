@@ -22,6 +22,63 @@ pub enum RecoveryError {
     Journal(JournalError),
 }
 
+/// Ошибка проверки перехода между поколениями.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RecoveryGenerationError {
+    /// Текущее поколение изменилось после чтения вызывающим кодом.
+    GenerationConflict {
+        expected_current: Option<u64>,
+        actual_current: Option<u64>,
+    },
+    /// Невозможно увеличить номер текущего поколения.
+    GenerationOverflow,
+    /// Новое поколение не является непосредственным преемником текущего.
+    InvalidNextGeneration { expected: u64, actual: u64 },
+}
+
+/// Ошибка commit в RecoveryStorage.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RecoveryStorageError<E> {
+    Generation(RecoveryGenerationError),
+    InvalidPackage(RecoveryError),
+    Backend(E),
+}
+
+/// Проверяет compare-and-swap условие и строгое увеличение generation.
+///
+/// Backend обязан вызывать эту функцию внутри своей атомарной секции записи,
+/// используя фактическое текущее поколение, прочитанное под той же блокировкой/CAS.
+/// Функция не защищает от rollback всего хранилища относительно внешней доверенной
+/// контрольной точки: такая защита относится к отдельному механизму anti-rollback.
+pub fn validate_generation_transition(
+    expected_current: Option<u64>,
+    actual_current: Option<u64>,
+    candidate_generation: u64,
+) -> Result<(), RecoveryGenerationError> {
+    if expected_current != actual_current {
+        return Err(RecoveryGenerationError::GenerationConflict {
+            expected_current,
+            actual_current,
+        });
+    }
+
+    let expected_next = match actual_current {
+        Some(current) => current
+            .checked_add(1)
+            .ok_or(RecoveryGenerationError::GenerationOverflow)?,
+        None => 1,
+    };
+
+    if candidate_generation != expected_next {
+        return Err(RecoveryGenerationError::InvalidNextGeneration {
+            expected: expected_next,
+            actual: candidate_generation,
+        });
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoveryManifest {
     /// Монотонный номер поколения recovery bundle, задаваемый storage-слоем.
@@ -108,8 +165,17 @@ pub struct RecoveryPackage {
 }
 
 impl RecoveryPackage {
+    /// Проверяет целостность пакета и полностью воспроизводит его без изменения пакета.
+    pub fn validate(&self) -> Result<(), RecoveryError> {
+        self.restore_inner().map(|_| ())
+    }
+
     /// Проверяет manifest, целостность snapshot и полностью воспроизводит journal.
     pub fn restore(self) -> Result<(EventValidator, ReplayReport), RecoveryError> {
+        self.restore_inner()
+    }
+
+    fn restore_inner(&self) -> Result<(EventValidator, ReplayReport), RecoveryError> {
         if self.journal.len() as u64 != self.manifest.journal_bytes {
             return Err(RecoveryError::JournalLengthMismatch);
         }
@@ -138,9 +204,23 @@ pub trait RecoveryStorage {
 
     fn load_current(&self) -> Result<Option<RecoveryPackage>, Self::Error>;
 
-    /// Атомарно публикует полный пакет как текущий generation.
-    /// Возврат Ok означает, что manifest и все данные durable согласно контракту backend.
-    fn commit_generation(&mut self, package: RecoveryPackage) -> Result<(), Self::Error>;
+    /// Compare-and-swap commit полного поколения.
+    ///
+    /// Реализация обязана внутри одной атомарной секции:
+    /// 1. прочитать фактическое текущее generation;
+    /// 2. проверить его через validate_generation_transition;
+    /// 3. проверить package.validate();
+    /// 4. durable записать все части пакета;
+    /// 5. атомарно опубликовать новый current generation.
+    ///
+    /// expected_current_generation=None разрешён только для создания первого поколения 1.
+    /// При существующем поколении G допускается только G+1. Устаревший writer получает
+    /// GenerationConflict; пропуск поколений и повторное использование номера запрещены.
+    fn commit_generation(
+        &mut self,
+        expected_current_generation: Option<u64>,
+        package: RecoveryPackage,
+    ) -> Result<(), RecoveryStorageError<Self::Error>>;
 }
 
 fn put_checkpoint(out: &mut Vec<u8>, checkpoint: &JournalCheckpoint) {
@@ -286,5 +366,60 @@ mod tests {
             package.restore(),
             Err(RecoveryError::JournalLengthMismatch)
         ));
+    }
+    #[test]
+    fn generation_transition_requires_compare_and_swap() {
+        assert_eq!(validate_generation_transition(None, None, 1), Ok(()));
+        assert_eq!(
+            validate_generation_transition(Some(4), Some(5), 6),
+            Err(RecoveryGenerationError::GenerationConflict {
+                expected_current: Some(4),
+                actual_current: Some(5),
+            })
+        );
+    }
+
+    #[test]
+    fn generation_transition_requires_exact_successor() {
+        assert_eq!(
+            validate_generation_transition(Some(4), Some(4), 6),
+            Err(RecoveryGenerationError::InvalidNextGeneration {
+                expected: 5,
+                actual: 6,
+            })
+        );
+        assert_eq!(validate_generation_transition(Some(4), Some(4), 5), Ok(()));
+    }
+
+    #[test]
+    fn generation_transition_detects_overflow() {
+        assert_eq!(
+            validate_generation_transition(Some(u64::MAX), Some(u64::MAX), 0),
+            Err(RecoveryGenerationError::GenerationOverflow)
+        );
+    }
+
+    #[test]
+    fn package_can_be_validated_without_consuming_it() {
+        let package = package();
+        assert_eq!(package.validate(), Ok(()));
+        assert_eq!(package.manifest.generation, 1);
+    }
+    #[test]
+    fn initial_generation_must_be_exactly_one() {
+        assert_eq!(
+            validate_generation_transition(None, None, 0),
+            Err(RecoveryGenerationError::InvalidNextGeneration {
+                expected: 1,
+                actual: 0,
+            })
+        );
+        assert_eq!(
+            validate_generation_transition(None, None, 2),
+            Err(RecoveryGenerationError::InvalidNextGeneration {
+                expected: 1,
+                actual: 2,
+            })
+        );
     }
 }
