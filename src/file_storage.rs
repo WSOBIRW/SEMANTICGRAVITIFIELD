@@ -488,7 +488,10 @@ mod tests {
             assert!(directory.path().join("generations").is_dir());
             assert!(directory.path().join(".staging").is_dir());
             hook_called = true;
-            Err(io::Error::new(io::ErrorKind::Other, "injected after layout sync"))
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "injected after layout sync",
+            ))
         });
 
         assert!(result.is_err());
