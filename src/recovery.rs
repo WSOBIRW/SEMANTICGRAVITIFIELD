@@ -22,7 +22,6 @@ pub enum RecoveryError {
     Journal(JournalError),
 }
 
-
 /// Ошибка проверки перехода между поколениями.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RecoveryGenerationError {
@@ -404,5 +403,4 @@ mod tests {
         assert_eq!(package.validate(), Ok(()));
         assert_eq!(package.manifest.generation, 1);
     }
-
 }
