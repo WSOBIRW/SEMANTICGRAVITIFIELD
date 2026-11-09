@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::num::NonZeroUsize;
 
 use crate::event::{EventPayload, MarketEvent};
 
@@ -35,12 +36,37 @@ pub enum ValidationWarning {
 pub struct EventValidator {
     // Контракт MVP: event_id глобально уникален в пределах экземпляра валидатора.
     seen_event_ids: HashSet<String>,
+    event_id_order: VecDeque<String>,
+    dedup_capacity: Option<NonZeroUsize>,
     last_sequences: HashMap<(String, String), u64>,
 }
 
 impl EventValidator {
+    /// Создаёт валидатор с неограниченной дедупликацией.
+    /// Для длительно работающего процесса следует задать явную ёмкость.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Создаёт валидатор с ограниченным окном последних N event_id.
+    /// Идентификаторы вытесняются по FIFO; повтор вне окна может быть принят.
+    pub fn with_dedup_capacity(capacity: NonZeroUsize) -> Self {
+        Self {
+            dedup_capacity: Some(capacity),
+            ..Self::default()
+        }
+    }
+
+    fn remember_event_id(&mut self, event_id: &str) {
+        self.seen_event_ids.insert(event_id.to_owned());
+        if let Some(capacity) = self.dedup_capacity {
+            self.event_id_order.push_back(event_id.to_owned());
+            while self.event_id_order.len() > capacity.get() {
+                if let Some(expired) = self.event_id_order.pop_front() {
+                    self.seen_event_ids.remove(&expired);
+                }
+            }
+        }
     }
 
     /// Совместимый строгий интерфейс: возвращает ошибку либо принимает событие.
@@ -87,7 +113,7 @@ impl EventValidator {
             }
         }
 
-        self.seen_event_ids.insert(event.event_id.clone());
+        self.remember_event_id(&event.event_id);
         if let Some(current) = event.sequence {
             self.last_sequences.insert(stream_key, current);
         }
@@ -154,6 +180,7 @@ fn validate_static(event: &MarketEvent) -> Result<(), ValidationError> {
 mod tests {
     use super::*;
     use crate::event::Quote;
+    use std::num::NonZeroUsize;
 
     fn quote(
         id: &str,
@@ -278,6 +305,53 @@ mod tests {
             EventValidator::new().validate(&event),
             Err(ValidationError::InvalidQuote { .. })
         ));
+    }
+
+
+    #[test]
+    fn bounded_deduplication_rejects_repeats_inside_window() {
+        let mut validator = EventValidator::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
+        let make = |id: &str| {
+            MarketEvent::quote(
+                id,
+                "feed-a",
+                "EURUSD",
+                100,
+                110,
+                None,
+                Quote {
+                    bid_ticks: 10_000,
+                    ask_ticks: 10_002,
+                    price_scale: 100_000,
+                },
+            )
+        };
+        assert!(validator.validate(&make("e1")).is_ok());
+        assert_eq!(validator.validate(&make("e1")), Err(ValidationError::DuplicateEventId));
+    }
+
+    #[test]
+    fn bounded_deduplication_evicts_oldest_identifier() {
+        let mut validator = EventValidator::with_dedup_capacity(NonZeroUsize::new(2).unwrap());
+        let make = |id: &str| {
+            MarketEvent::quote(
+                id,
+                "feed-a",
+                "EURUSD",
+                100,
+                110,
+                None,
+                Quote {
+                    bid_ticks: 10_000,
+                    ask_ticks: 10_002,
+                    price_scale: 100_000,
+                },
+            )
+        };
+        assert!(validator.validate(&make("e1")).is_ok());
+        assert!(validator.validate(&make("e2")).is_ok());
+        assert!(validator.validate(&make("e3")).is_ok());
+        assert!(validator.validate(&make("e1")).is_ok());
     }
 
     #[test]
