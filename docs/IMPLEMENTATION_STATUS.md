@@ -88,6 +88,21 @@
 
 Ветка PR основана на `d119f4eeb606082c0628bf5bd5e8bf476a059d76`. Main после него продвинулся отдельными документальными коммитами. Перед принятием необходимо завершить независимое code/security review на актуальном SHA и проверить любые новые findings. Документальные коммиты main после интеграционной синхронизации не меняют код backend.
 
+### PR #13 — Deterministic Synthetic Observer Experiment Core
+
+Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/13
+
+- Состояние: OPEN, не слит.
+- Ветка: `feat/controlled-observer-experiment`.
+- HEAD: `c3d6f4eb5f5c8ad0522c1f29b91e1f2e5ccff076`.
+- Базовая ветка PR: `feat/observer-foundation`; PR #13 зависит от PR #12 и намеренно не направлен непосредственно в main.
+- CI для PR #13 пока не обнаружен; до слияния базового PR #12 эта ветка является стековой. Проверки не заявляются пройденными.
+- Добавлен `src/experiment.rs`: синтетическое скрытое состояние, ограниченный доступ наблюдателя, квантование, детерминированный ограниченный шум, производное представление и явное вмешательство.
+- Добавлены 8 контрактных тестов в `tests/experiment_contract.rs`.
+- Наблюдение не изменяет исходное состояние; вмешательство возвращает новое состояние и проверяет переполнение.
+- Это первый минимальный слой, не полноценный статистический runner, не независимый verification pipeline и не доказательство свойств реального смыслового поля.
+- PR не сливался; требуется CI после интеграции с PR #12 и независимое review.
+
 ### PR #12 — Observer Model Foundation
 
 Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/12
@@ -100,8 +115,8 @@
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
 - Добавлены расширяемые коды типов и явные значения Unknown для классификаций процедуры.
 - Добавлены интеграционные позитивные и негативные тесты.
-- Независимый Codex code review запрошен повторно на точном HEAD `530dc07`; на момент обновления выполняется, findings ещё не получены.
-- Отдельный security review на точном HEAD запрошен; запуск/завершение ещё не подтверждены.
+- Независимый Codex code review на точном HEAD `530dc07` завершён; receipt сообщает об отсутствии серьёзных замечаний, summary показывает `has_any_findings=false` и `has_unresolved_findings=false`. Обычный review не заменяет security review.
+- Отдельный security review повторно запрошен на точном HEAD; на момент обновления подтверждение запуска/завершения отсутствует.
 - На последней проверке PR #12: OPEN, HEAD `530dc078b93a5e8b3466096be5491d20978deeed`; CI #251 SUCCESS; code review `running`; security review status не опубликован; review submissions и inline threads отсутствуют.
 - PR не сливался. Структурная валидация не подтверждает истинность наблюдения, независимость наблюдателей или причинное влияние измерения.
 
@@ -150,12 +165,12 @@
 2. Получить завершённое независимое code review PR #11 на точном HEAD; проверить новые findings, если они появятся.
 3. Реализовать минимальный синтетический стенд по CONTROLLED_OBSERVER_EXPERIMENT.md после принятия модели наблюдателя.
 4. Выполнить интеграционную проверку PR #11 относительно актуального main и повторить CI на итоговом SHA.
-3. Провести отдельную проверку модели угроз файлового backend, включая symlink/TOCTOU, конкурентные open/writers, crash consistency и локального противника.
-4. Сравнить file-generation backend и SQLite по требованиям, отказам и эксплуатации.
-5. Определить независимый anti-rollback trust anchor и безопасную retention/GC модель.
-6. Реализовать внутреннюю event/stream/session identity по IDENTITY_AND_TIME_MODEL.md и EVENT_SCHEMA_EVOLUTION.md.
-7. Добавить v1 fixtures, legacy adapter, opaque preservation и отдельные версии форматов с миграционными тестами.
-8. Продолжить Reconstruction, Semantic Intelligence и Independent Verification по отдельным доказательным этапам.
+5. Провести отдельную проверку модели угроз файлового backend, включая symlink/TOCTOU, конкурентные open/writers, crash consistency и локального противника.
+6. Сравнить file-generation backend и SQLite по требованиям, отказам и эксплуатации.
+7. Определить независимый anti-rollback trust anchor и безопасную retention/GC модель.
+8. Реализовать внутреннюю event/stream/session identity по IDENTITY_AND_TIME_MODEL.md и EVENT_SCHEMA_EVOLUTION.md.
+9. Добавить v1 fixtures, legacy adapter, opaque preservation и отдельные версии форматов с миграционными тестами.
+10. Продолжить Reconstruction, Semantic Intelligence и Independent Verification по отдельным доказательным этапам.
 
 ## Правило статуса
 
