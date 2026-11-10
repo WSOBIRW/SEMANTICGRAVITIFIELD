@@ -68,6 +68,8 @@ pub enum ExperimentError {
     EmptyObserverId,
     ZeroObserverVersion,
     ZeroResolution,
+    DuplicateVisibleKey,
+    UnknownVisibleKey,
     MissingInterventionTarget,
     ArithmeticOverflow,
 }
@@ -105,6 +107,11 @@ impl SyntheticObserver {
         if self.resolution == 0 {
             return Err(ExperimentError::ZeroResolution);
         }
+        for (index, key) in self.visible_keys.iter().enumerate() {
+            if self.visible_keys[..index].iter().any(|previous| previous == key) {
+                return Err(ExperimentError::DuplicateVisibleKey);
+            }
+        }
         Ok(())
     }
 }
@@ -119,6 +126,11 @@ pub fn observe(
 ) -> Result<ObservationView, ExperimentError> {
     state.validate()?;
     observer.validate()?;
+    for key in &observer.visible_keys {
+        if !state.variables.iter().any(|variable| &variable.key == key) {
+            return Err(ExperimentError::UnknownVisibleKey);
+        }
+    }
 
     let mut visible_variables = Vec::new();
 
@@ -132,6 +144,8 @@ pub fn observe(
         let noise = deterministic_noise(
             observer.noise_seed,
             &observer.observer_id,
+            &state.state_id,
+            state.step,
             &variable.key,
             observer.noise_bound,
         );
@@ -182,13 +196,27 @@ pub fn apply_intervention(
     Ok(next)
 }
 
-fn deterministic_noise(seed: u64, observer_id: &str, key: &str, bound: u64) -> i128 {
+fn deterministic_noise(
+    seed: u64,
+    observer_id: &str,
+    state_id: &str,
+    step: u64,
+    key: &str,
+    bound: u64,
+) -> i128 {
     if bound == 0 {
         return 0;
     }
 
     let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
-    for byte in observer_id.bytes().chain([0xff]).chain(key.bytes()) {
+    for byte in observer_id
+        .bytes()
+        .chain([0xff])
+        .chain(state_id.bytes())
+        .chain(step.to_le_bytes())
+        .chain([0xfe])
+        .chain(key.bytes())
+    {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
