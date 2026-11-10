@@ -281,7 +281,6 @@ impl ObservationRecord {
     }
 }
 
-
 fn update_string(hasher: &mut Sha256, value: &str) {
     hasher.update((value.len() as u64).to_le_bytes());
     hasher.update(value.as_bytes());
