@@ -130,8 +130,8 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/observer-foundation`.
-- Новый HEAD после исправления подмены определений: `c485ca7c88ed6f10531d046ecc7e02214a85f585`.
-- CI run #251 на старом HEAD `530dc07` был SUCCESS (41 unit + 1 integration + 12 observer tests). На новом HEAD run #291: rustfmt PASS, Clippy PASS, 41 unit + 1 integration + 15 из 16 observer tests PASS; один новый тест порядка digest упал из-за тестовой ошибки (список из одного элемента не менялся при reverse). Исправление теста внесено в `c485ca7`; повторный CI ожидается.
+- Текущий HEAD после исправления и форматирования: `3eca2adb690bda000e50836515e2f557fcc4bebb`.
+- CI run #251 на старом HEAD `530dc07` был SUCCESS (41 unit + 1 integration + 12 observer tests). На текущем HEAD `3eca2ad` CI run #294: rustfmt PASS, Clippy PASS, 41 unit tests + 1 integration test + 16 observer integration tests PASS (58 всего). Промежуточные run #289 и #292 выявили соответственно ошибку тестового предположения о reverse одноэлементного списка и rustfmt-форматирование; оба исправлены до run #294.
 - Добавлены ObserverDescriptor, ObservationProcedure и ObservationRecord.
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
 - Добавлены расширяемые коды типов и явные значения Unknown для классификаций процедуры.
