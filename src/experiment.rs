@@ -1,6 +1,6 @@
 //! Минимальное синтетическое ядро экспериментов с наблюдателями.
 //!
-//! Скрытое состояние, доступ наблюдателя и вмешательство разделены.
+//! Скрытое состояние, проекция наблюдения и вмешательство разделены.
 //! Вызов observe не изменяет состояние. Изменение возможно только через
 //! явный apply_intervention. Типы здесь описывают синтетическую модель,
 //! а не онтологию реального смыслового поля.
@@ -22,20 +22,26 @@ pub struct SyntheticState {
     pub variables: Vec<StateVariable>,
 }
 
-/// Ограничения доступа и измерения конкретного наблюдателя.
+/// Конфигурация синтетической проекции наблюдателя.
+///
+/// Важно: SyntheticObserver создаётся вызывающей стороной. Поле
+/// `visible_keys` задаёт только проекцию данных для эксперимента и НЕ является
+/// проверкой полномочий, границей конфиденциальности или механизмом изоляции.
+/// Не передавайте через этот API секретные данные в расчёте на сокрытие ключей.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyntheticObserver {
     pub observer_id: String,
     pub version: u32,
-    /// Пустой список означает отсутствие доступа ко всем переменным.
+    /// Фильтр проекции, а не список разрешений безопасности.
+    /// Пустой список означает отсутствие переменных в представлении.
     pub visible_keys: Vec<String>,
     /// Шаг квантования; 1 означает отсутствие квантования.
     pub resolution: u64,
     /// Максимальная абсолютная добавляемая ошибка измерения.
-    /// Значение не может превышать i64::MAX: генератор использует
-    /// 64-битное пространство для представления симметричного диапазона.
+    /// Только синтетический шум; не средство приватности или сокрытия данных.
     pub noise_bound: u64,
-    /// Seed локального детерминированного шума.
+    /// Публичный seed детерминированного шума симуляции.
+    /// Не предназначен для генерации секретного или криптографического шума.
     pub noise_seed: u64,
 }
 
@@ -123,10 +129,18 @@ impl SyntheticObserver {
     }
 }
 
-/// Формирует представление по доступной проекции состояния.
+/// Формирует представление по фильтру проекции состояния.
+///
+/// `visible_keys` не проверяет полномочия вызывающей стороны. Вызывающий код
+/// может сформировать SyntheticObserver с любым набором ключей, включая все
+/// ключи состояния. Это намеренно простая синтетическая проекция, а не
+/// security boundary. Контроль доступа, если он нужен приложению, должен
+/// выполняться отдельным доверенным слоем до передачи данных в эту функцию.
 ///
 /// Функция не изменяет исходное состояние. Повторный вызов с одинаковыми
-/// аргументами возвращает тот же результат, включая шум.
+/// аргументами возвращает то же представление. Детерминированный шум является
+/// только параметром симуляции: он не обеспечивает конфиденциальность,
+/// дифференциальную приватность или криптографическую непредсказуемость.
 pub fn observe(
     state: &SyntheticState,
     observer: &SyntheticObserver,
@@ -148,6 +162,15 @@ pub fn observe(
         return Err(ExperimentError::UnknownVisibleKey);
     }
 
+    // Общая часть хеша вычисляется один раз на наблюдение, а не повторно
+    // для каждой переменной. Это устраняет умножение длины ID на число ключей.
+    let shared_noise_prefix = noise_prefix(
+        observer.noise_seed,
+        &observer.observer_id,
+        &state.state_id,
+        state.step,
+    );
+
     let mut visible_variables = Vec::new();
 
     for variable in &state.variables {
@@ -158,10 +181,7 @@ pub fn observe(
         let resolution = i128::from(observer.resolution);
         let quantized = i128::from(variable.value).div_euclid(resolution) * resolution;
         let noise = deterministic_noise(
-            observer.noise_seed,
-            &observer.observer_id,
-            &state.state_id,
-            state.step,
+            shared_noise_prefix,
             &variable.key,
             observer.noise_bound,
         );
@@ -212,30 +232,29 @@ pub fn apply_intervention(
     Ok(next)
 }
 
-fn deterministic_noise(
-    seed: u64,
-    observer_id: &str,
-    state_id: &str,
-    step: u64,
-    key: &str,
-    bound: u64,
-) -> i128 {
+fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn noise_prefix(seed: u64, observer_id: &str, state_id: &str, step: u64) -> u64 {
+    let hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
+    let hash = hash_bytes(hash, observer_id.as_bytes());
+    let hash = hash_bytes(hash, &[0xff]);
+    let hash = hash_bytes(hash, state_id.as_bytes());
+    let hash = hash_bytes(hash, &step.to_le_bytes());
+    hash_bytes(hash, &[0xfe])
+}
+
+fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
     if bound == 0 {
         return 0;
     }
 
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
-    for byte in observer_id
-        .bytes()
-        .chain([0xff])
-        .chain(state_id.bytes())
-        .chain(step.to_le_bytes())
-        .chain([0xfe])
-        .chain(key.bytes())
-    {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
+    let hash = hash_bytes(prefix, key.as_bytes());
 
     // Для bound <= i64::MAX ширина 2 * bound + 1 помещается в u64.
     // Преобразование в i128 до сложения исключает переполнение.
