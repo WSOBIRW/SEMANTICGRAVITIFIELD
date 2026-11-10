@@ -294,23 +294,57 @@ impl FileRecoveryStorage {
             .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
         check_artifact_limit("aggregate", total_size, self.read_limits.max_total_bytes)?;
 
+        // Enforce the aggregate budget again during actual reads. The files
+        // may grow after metadata inspection; per-file limits alone would allow
+        // the combined buffers to exceed max_total_bytes in that race.
+        let snapshot_limit = self
+            .read_limits
+            .max_snapshot_bytes
+            .min(self.read_limits.max_total_bytes);
+        let snapshot_error_artifact = if snapshot_limit < self.read_limits.max_snapshot_bytes {
+            "aggregate"
+        } else {
+            "snapshot"
+        };
         let snapshot = read_bounded_artifact(
             snapshot_file,
-            "snapshot",
+            snapshot_error_artifact,
             snapshot_size,
-            self.read_limits.max_snapshot_bytes,
+            snapshot_limit,
         )?;
+
+        let after_snapshot = self
+            .read_limits
+            .max_total_bytes
+            .checked_sub(snapshot.len() as u64)
+            .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
+        let journal_limit = self.read_limits.max_journal_bytes.min(after_snapshot);
+        let journal_error_artifact = if journal_limit < self.read_limits.max_journal_bytes {
+            "aggregate"
+        } else {
+            "journal"
+        };
         let journal = read_bounded_artifact(
             journal_file,
-            "journal",
+            journal_error_artifact,
             journal_size,
-            self.read_limits.max_journal_bytes,
+            journal_limit,
         )?;
+
+        let after_journal = after_snapshot
+            .checked_sub(journal.len() as u64)
+            .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
+        let manifest_limit = self.read_limits.max_manifest_bytes.min(after_journal);
+        let manifest_error_artifact = if manifest_limit < self.read_limits.max_manifest_bytes {
+            "aggregate"
+        } else {
+            "manifest"
+        };
         let manifest_bytes = read_bounded_artifact(
             manifest_file,
-            "manifest",
+            manifest_error_artifact,
             manifest_size,
-            self.read_limits.max_manifest_bytes,
+            manifest_limit,
         )?;
 
         if Sha256::digest(&manifest_bytes).as_slice() != pointer.manifest_digest {
