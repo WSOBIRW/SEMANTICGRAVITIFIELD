@@ -19,7 +19,7 @@
 - quality — известные ограничения качества;
 - provenance — сведения о происхождении, если доступны.
 
-Будущие версии контракта должны позволять явно задавать namespace/epoch идентификатора, session_id, stream_generation и sequence domain. Эти измерения нельзя выводить из event_id или source_id эвристически.
+Будущие версии контракта должны позволять явно задавать namespace/epoch идентификатора, session_id, stream_generation и sequence domain. Эти измерения нельзя выводить из event_id или source_id эвристически. Полная целевая модель определена в IDENTITY_AND_TIME_MODEL.md.
 
 ### 2.2. TradingState
 Может включать идентификатор торговой системы и сессии, позиции, открытые ордера и состояние исполнения, ограничения риска, экспозицию, валюту расчёта и временную метку состояния.
@@ -107,6 +107,7 @@ Replay старого журнала либо воспроизводится п�
 ## 9. Связанные нормативные документы
 - ARCHITECTURE.md
 - ARCHITECTURAL_CONSTRAINTS_REGISTER.md
+- IDENTITY_AND_TIME_MODEL.md
 - EVIDENCE_MODEL.md
 - DATA_PROVENANCE.md
 - UNCERTAINTY_MODEL.md
