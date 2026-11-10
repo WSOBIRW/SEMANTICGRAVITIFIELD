@@ -145,9 +145,7 @@ impl FileRecoveryStorage {
         create_dir_all_synced(&root)?;
         ensure_real_directory(&root)?;
         create_dir_all_synced(&root.join("generations"))?;
-        create_dir_all_synced(&root.join(".staging"))?;
         ensure_real_directory(&root.join("generations"))?;
-        ensure_real_directory(&root.join(".staging"))?;
 
         // Persist both directory entries before any commit can publish CURRENT.
         // Otherwise a power loss could preserve CURRENT while losing "generations/".
@@ -242,10 +240,10 @@ impl FileRecoveryStorage {
     {
         let generation = package.manifest.generation;
         let generations_dir = self.root.join("generations");
-        let staging_root = self.root.join(".staging");
         let token = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let stage_dir = staging_root.join(format!(
-            "g-{generation:020}-p{}-{token}",
+        // Keep the unique staging directory as a direct child of the validated root.
+        let stage_dir = self.root.join(format!(
+            ".staging-g-{generation:020}-p{}-{token}",
             std::process::id()
         ));
         let final_dir = self.generation_dir(generation);
@@ -496,7 +494,6 @@ mod tests {
         let result = FileRecoveryStorage::open_with_hook(directory.path(), |stage| {
             assert_eq!(stage, CommitStage::LayoutDirectoriesSynced);
             assert!(directory.path().join("generations").is_dir());
-            assert!(directory.path().join(".staging").is_dir());
             hook_called = true;
             Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -704,7 +701,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn rejects_symlinked_staging_directory_without_touching_target() {
+    fn staging_symlink_is_never_followed_or_modified() {
         use std::os::unix::fs::symlink;
 
         let directory = TestDirectory::new();
@@ -712,14 +709,11 @@ mod tests {
         fs::write(outside.path().join("preserve.txt"), b"keep").unwrap();
         symlink(outside.path(), directory.path().join(".staging")).unwrap();
 
-        assert!(matches!(
-            FileRecoveryStorage::open(directory.path()),
-            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
-        ));
-        assert_eq!(
-            fs::read(outside.path().join("preserve.txt")).unwrap(),
-            b"keep"
-        );
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        assert_eq!(fs::read(outside.path().join("preserve.txt")).unwrap(), b"keep");
+        assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 1);
     }
     #[cfg(unix)]
     #[test]
