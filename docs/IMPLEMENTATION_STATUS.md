@@ -20,6 +20,7 @@
 - SEMANTIC_INTELLIGENCE.md — исследование структур и гипотез.
 - DECISION_CONTRACT.md — результаты и защитные вердикты.
 - INTERFACE_CONTRACT.md — внешний контракт.
+- IDENTITY_AND_TIME_MODEL.md — целевая модель идентичности и времени; реализация ещё не включена в ядро.
 - ROADMAP.md — этапы развития.
 - AUDIT_FINDINGS.md — findings раннего аудита.
 - SNAPSHOT_FORMAT.md, JOURNAL_FORMAT.md, RECOVERY_MANIFEST.md — форматы восстановления.
