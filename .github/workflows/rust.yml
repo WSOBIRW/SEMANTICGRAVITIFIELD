@@ -35,6 +35,7 @@ jobs:
         shell: bash
         run: |
           cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          jq -r '.packages[] | select(.source != null) | [.name, .version, (.license // "MISSING"), .source] | @tsv' "$RUNNER_TEMP/cargo-metadata.json"
           jq -e '
             [.packages[] | select(.source != null)] as $packages
             | ($packages | length > 0)
@@ -48,4 +49,3 @@ jobs:
               )
             )
           ' "$RUNNER_TEMP/cargo-metadata.json" > /dev/null
-          jq -r '.packages[] | select(.source != null) | [.name, .version, .license, .source] | @tsv' "$RUNNER_TEMP/cargo-metadata.json"
