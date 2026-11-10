@@ -21,6 +21,29 @@ const DIGEST_LEN: usize = 32;
 const CURRENT_PAYLOAD_LEN: usize = 4 + 2 + 8 + DIGEST_LEN;
 const CURRENT_LEN: usize = CURRENT_PAYLOAD_LEN + DIGEST_LEN;
 
+/// Конфигурируемые бюджеты чтения артефактов восстановления.
+///
+/// Значения по умолчанию являются эксплуатационной политикой, а не пределами
+/// формата SGF. Их можно увеличить через open_with_limits после оценки памяти.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtifactReadLimits {
+    pub max_snapshot_bytes: u64,
+    pub max_journal_bytes: u64,
+    pub max_manifest_bytes: u64,
+    pub max_total_bytes: u64,
+}
+
+impl Default for ArtifactReadLimits {
+    fn default() -> Self {
+        Self {
+            max_snapshot_bytes: 256 * 1024 * 1024,
+            max_journal_bytes: 512 * 1024 * 1024,
+            max_manifest_bytes: 16 * 1024 * 1024,
+            max_total_bytes: 512 * 1024 * 1024,
+        }
+    }
+}
+
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
@@ -32,6 +55,13 @@ pub enum FileRecoveryStorageError {
     UnreferencedGenerationExists,
     ManifestGenerationMismatch { pointer: u64, manifest: u64 },
     ManifestDigestMismatch,
+    InvalidRecoveryArtifact(&'static str),
+    ArtifactReadLimitExceeded {
+        artifact: &'static str,
+        size: u64,
+        limit: u64,
+    },
+    ArtifactSizeOverflow,
     Recovery(RecoveryError),
 }
 
@@ -52,6 +82,14 @@ impl std::fmt::Display for FileRecoveryStorageError {
                 "CURRENT generation {pointer} does not match manifest generation {manifest}"
             ),
             Self::ManifestDigestMismatch => write!(f, "CURRENT manifest digest mismatch"),
+            Self::InvalidRecoveryArtifact(name) => {
+                write!(f, "recovery artifact is not a regular file: {name}")
+            }
+            Self::ArtifactReadLimitExceeded { artifact, size, limit } => write!(
+                f,
+                "recovery artifact {artifact} size {size} exceeds configured read limit {limit}"
+            ),
+            Self::ArtifactSizeOverflow => write!(f, "recovery artifact size sum overflow"),
             Self::Recovery(error) => write!(f, "recovery package validation failed: {error:?}"),
         }
     }
@@ -126,16 +164,39 @@ impl CurrentPointer {
 #[derive(Clone, Debug)]
 pub struct FileRecoveryStorage {
     root: PathBuf,
+    read_limits: ArtifactReadLimits,
 }
 
 impl FileRecoveryStorage {
-    /// Открывает локальное хранилище и создаёт необходимые каталоги.
+    /// Открывает локальное хранилище с эксплуатационными бюджетами по умолчанию.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, FileRecoveryStorageError> {
-        Self::open_with_hook(root, |_| Ok(()))
+        Self::open_with_limits(root, ArtifactReadLimits::default())
+    }
+
+    /// Открывает хранилище с явными бюджетами чтения артефактов.
+    ///
+    /// Бюджеты ограничивают выделение памяти при восстановлении. Они не меняют
+    /// формат пакета и могут быть увеличены вызывающей стороной.
+    pub fn open_with_limits(
+        root: impl AsRef<Path>,
+        read_limits: ArtifactReadLimits,
+    ) -> Result<Self, FileRecoveryStorageError> {
+        Self::open_with_limits_and_hook(root, read_limits, |_| Ok(()))
     }
 
     fn open_with_hook<F>(
         root: impl AsRef<Path>,
+        hook: F,
+    ) -> Result<Self, FileRecoveryStorageError>
+    where
+        F: FnMut(CommitStage) -> io::Result<()>,
+    {
+        Self::open_with_limits_and_hook(root, ArtifactReadLimits::default(), hook)
+    }
+
+    fn open_with_limits_and_hook<F>(
+        root: impl AsRef<Path>,
+        read_limits: ArtifactReadLimits,
         mut hook: F,
     ) -> Result<Self, FileRecoveryStorageError>
     where
@@ -167,7 +228,7 @@ impl FileRecoveryStorage {
         if !lock_metadata.file_type().is_file() || lock_metadata.file_type().is_symlink() {
             return Err(FileRecoveryStorageError::InvalidLockFile);
         }
-        Ok(Self { root })
+        Ok(Self { root, read_limits })
     }
 
     fn generation_dir(&self, generation: u64) -> PathBuf {
@@ -200,9 +261,44 @@ impl FileRecoveryStorage {
             return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
         }
 
-        let snapshot = fs::read(generation_dir.join("snapshot.bin"))?;
-        let journal = fs::read(generation_dir.join("journal.bin"))?;
-        let manifest_bytes = fs::read(generation_dir.join("manifest.bin"))?;
+        let snapshot_path = generation_dir.join("snapshot.bin");
+        let journal_path = generation_dir.join("journal.bin");
+        let manifest_path = generation_dir.join("manifest.bin");
+
+        // Inspect all opened artifacts and reject per-file/aggregate sizes before
+        // allocating any artifact buffer.
+        let (snapshot_file, snapshot_size) = open_recovery_artifact(&snapshot_path, "snapshot")?;
+        let (journal_file, journal_size) = open_recovery_artifact(&journal_path, "journal")?;
+        let (manifest_file, manifest_size) = open_recovery_artifact(&manifest_path, "manifest")?;
+
+        check_artifact_limit("snapshot", snapshot_size, self.read_limits.max_snapshot_bytes)?;
+        check_artifact_limit("journal", journal_size, self.read_limits.max_journal_bytes)?;
+        check_artifact_limit("manifest", manifest_size, self.read_limits.max_manifest_bytes)?;
+
+        let total_size = snapshot_size
+            .checked_add(journal_size)
+            .and_then(|size| size.checked_add(manifest_size))
+            .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
+        check_artifact_limit("aggregate", total_size, self.read_limits.max_total_bytes)?;
+
+        let snapshot = read_bounded_artifact(
+            snapshot_file,
+            "snapshot",
+            snapshot_size,
+            self.read_limits.max_snapshot_bytes,
+        )?;
+        let journal = read_bounded_artifact(
+            journal_file,
+            "journal",
+            journal_size,
+            self.read_limits.max_journal_bytes,
+        )?;
+        let manifest_bytes = read_bounded_artifact(
+            manifest_file,
+            "manifest",
+            manifest_size,
+            self.read_limits.max_manifest_bytes,
+        )?;
 
         if Sha256::digest(&manifest_bytes).as_slice() != pointer.manifest_digest {
             return Err(FileRecoveryStorageError::ManifestDigestMismatch);
@@ -392,6 +488,62 @@ enum CommitStage {
     CurrentSynced,
     CurrentPublished,
     RootDirectorySynced,
+}
+
+fn open_recovery_artifact(
+    path: &Path,
+    name: &'static str,
+) -> Result<(File, u64), FileRecoveryStorageError> {
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
+    }
+    Ok((file, metadata.len()))
+}
+
+fn check_artifact_limit(
+    artifact: &'static str,
+    size: u64,
+    limit: u64,
+) -> Result<(), FileRecoveryStorageError> {
+    if size > limit {
+        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+            artifact,
+            size,
+            limit,
+        });
+    }
+    Ok(())
+}
+
+fn read_bounded_artifact(
+    file: File,
+    artifact: &'static str,
+    initial_size: u64,
+    limit: u64,
+) -> Result<Vec<u8>, FileRecoveryStorageError> {
+    let capacity = usize::try_from(initial_size)
+        .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(capacity).map_err(|error| {
+        FileRecoveryStorageError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            format!("cannot reserve recovery artifact buffer: {error}"),
+        ))
+    })?;
+
+    // The extra byte detects growth between metadata inspection and reading.
+    let mut reader = file.take(limit.saturating_add(1));
+    reader.read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+            artifact,
+            size: bytes.len() as u64,
+            limit,
+        });
+    }
+    Ok(bytes)
 }
 
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
