@@ -21,7 +21,7 @@
 ## Этап 2. Достоверность входов и реконструкция — в работе
 - [x] Bounded dedup и reset_stream через публичный API.
 - [x] Защита snapshot restore от неконтролируемых резервирований памяти.
-- [ ] Формализовать source/session/stream generation и область уникальности event identity.
+- [x] Формализовать целевую source/session/stream generation identity и временную семантику (IDENTITY_AND_TIME_MODEL.md); реализация и миграция остаются открытыми.
 - [ ] Определить временную точность, clock domains, поздние и out-of-order события.
 - [ ] Формализовать completeness, sequence gaps и правила восстановления пропусков.
 - [ ] Ввести расширяемую схему событий с безопасным сохранением неизвестных типов.
