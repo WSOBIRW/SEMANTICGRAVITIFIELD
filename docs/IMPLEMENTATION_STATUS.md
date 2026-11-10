@@ -95,15 +95,17 @@
 Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/14
 
 - Состояние: OPEN, не слит.
-- Ветка: `feat/file-generation-recovery-storage-current`, создана от актуального `main` для устранения расхождения старой ветки PR #11 с main.
-- Текущий HEAD: `92e47530cb0258b4a41046b641209b96430f057d`.
-- Реализация файлового backend перенесена в чистую ветку; PR содержит Cargo.toml, src/lib.rs, src/file_storage.rs и временное изменение CI workflow для экспорта Cargo.lock. Временный workflow шаг должен быть удалён после получения lockfile.
-- Реализованы configurable per-artifact и aggregate бюджеты чтения; размеры всех файлов и сумма проверяются до выделения буферов. Aggregate budget дополнительно пересчитывается по фактически прочитанным байтам между последовательными чтениями, чтобы рост файлов после metadata check не обходил совокупный предел.
-- Добавлены тесты на per-file budget, aggregate budget, рост файла и bounded reader при росте после проверки размера.
-- Code review автоматически запущен при открытии PR на первоначальном HEAD `cb456301`; повторная проверка актуального HEAD `92e4753` запрошена. Завершённый актуальный review пока не подтверждён.
-- Отдельный security review актуального HEAD запрошен; результат пока не подтверждён.
-- CI на актуальном HEAD пока не подтверждён. Локальный Rust toolchain в рабочей среде отсутствует.
-- Cargo.lock ещё не добавлен; в workflow временно добавлен экспорт генерируемого Cargo.lock как артефакта для последующей фиксации и аудита. До появления lockfile dependency graph не считается закреплённым.
+- Ветка: `feat/file-generation-recovery-storage-current`, создана от актуального main, чтобы избежать diverged history исходной ветки PR #11.
+- Текущий HEAD: `d686043d0a1fc00cc9a62d5f2b5d74b09851d49c`.
+- Реализация файлового backend перенесена в чистую ветку. Включены Cargo.toml, Cargo.lock, src/lib.rs, src/file_storage.rs и обновление CI workflow.
+- Cargo.lock сгенерирован Cargo в успешном run #297; 21 пакет, включая платформенные зависимости Windows, с версиями и checksum. В CI Clippy и тесты теперь используют --locked. Временный экспорт lockfile как artifact удалён.
+- Run #297 на кодовом HEAD `8e734ff`: rustfmt PASS, Clippy PASS, тесты PASS; Cargo.lock artifact получен и добавлен в репозиторий.
+- На новом HEAD `d686043` выполняется CI run #299, который дополнительно проверяет committed lockfile и --locked.
+- Реализованы конфигурируемые per-artifact и aggregate бюджеты чтения. Размеры всех файлов и исходная сумма проверяются до выделения буферов; aggregate budget повторно контролируется по фактически прочитанным байтам между последовательными чтениями, чтобы рост нескольких файлов после metadata check не обходил совокупный предел.
+- Добавлены тесты на per-file budget, aggregate budget, рост файла и bounded reader при росте после metadata check.
+- Code review и отдельный security review запрошены на точном HEAD `d686043`; завершённые результаты пока не подтверждены.
+- Локальный Rust toolchain в рабочей среде отсутствует; проверки выполняются GitHub Actions.
+- Полный dependency/license/provenance audit не завершён. Cargo.lock закрепляет граф, но не подтверждает безопасность, лицензии или доверенность источников.
 - PR #14 не слит.
 
 ### PR #13 — Deterministic Synthetic Observer Experiment Core
