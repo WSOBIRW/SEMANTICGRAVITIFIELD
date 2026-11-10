@@ -779,16 +779,16 @@ mod tests {
         assert!(storage
             .publish_with_token(package(1), token, |_| Ok(()))
             .is_err());
-        assert_eq!(
-            fs::read(&current_temp).unwrap(),
-            b"previous-process"
-        );
+        assert_eq!(fs::read(&current_temp).unwrap(), b"previous-process");
         assert!(storage.generation_dir(1).join("manifest.bin").exists());
-        assert!(!directory.path().join(format!(
-            ".staging-g-{:020}-p{}-{token}",
-            1,
-            std::process::id()
-        )).exists());
+        assert!(!directory
+            .path()
+            .join(format!(
+                ".staging-g-{:020}-p{}-{token}",
+                1,
+                std::process::id()
+            ))
+            .exists());
     }
 
     #[cfg(unix)]
