@@ -44,6 +44,7 @@ jobs:
               and (.license != null)
               and (
                 .license
+                | if . == "MIT/Apache-2.0" or . == "Apache-2.0/MIT" then "MIT OR Apache-2.0" else . end
                 | split(" OR ")
                 | all(.[]; . == "MIT" or . == "Apache-2.0" or . == "BSD-3-Clause")
               )
