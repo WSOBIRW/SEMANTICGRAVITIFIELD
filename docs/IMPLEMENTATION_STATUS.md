@@ -65,14 +65,14 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/file-generation-recovery-storage-current`, создана от актуального main, чтобы избежать diverged history исходной ветки PR #11.
-- Текущий HEAD: `d686043d0a1fc00cc9a62d5f2b5d74b09851d49c`.
+- Текущий HEAD: `fccfee95e1367945387fed8d9942d82f37f49dec`.
 - Реализация файлового backend перенесена в чистую ветку. Включены Cargo.toml, Cargo.lock, src/lib.rs, src/file_storage.rs и обновление CI workflow.
 - Cargo.lock сгенерирован Cargo в успешном run #297; 21 пакет, включая платформенные зависимости Windows, с версиями и checksum. В CI Clippy и тесты теперь используют --locked. Временный экспорт lockfile как artifact удалён.
 - Run #297 на кодовом HEAD `8e734ff`: rustfmt PASS, Clippy PASS, тесты PASS; Cargo.lock artifact получен и добавлен в репозиторий.
-- CI run #299 на точном HEAD `d686043`: rustfmt PASS, Clippy PASS, 57 unit tests + 1 integration test PASS. Проверка выполнялась с committed Cargo.lock и `--locked`.
+- CI run #309 на точном HEAD `fccfee9`: rustfmt PASS, Clippy PASS, 58 unit tests + 1 integration test PASS (59 всего). Проверка выполнялась с committed Cargo.lock и `--locked`.
 - Реализованы конфигурируемые per-artifact и aggregate бюджеты чтения. Размеры всех файлов и исходная сумма проверяются до выделения буферов; aggregate budget повторно контролируется по фактически прочитанным байтам между последовательными чтениями, чтобы рост нескольких файлов после metadata check не обходил совокупный предел.
-- Добавлены тесты на per-file budget, aggregate budget, рост файла и bounded reader при росте после metadata check.
-- Code review и отдельный security review запрошены на точном HEAD `d686043`; Code Review выполняется, Security Review ещё не имеет подтверждённого отдельного результата.
+- Добавлены тесты на per-file budget, aggregate budget, рост файла, bounded reader при росте после metadata check и нулевой бюджет.
+- Code Review запрошен на точном HEAD `fccfee9` и выполняется; Security Review отдельно запрошен, но подтверждённого результата пока нет.
 - Локальный Rust toolchain в рабочей среде отсутствует; проверки выполняются GitHub Actions.
 - Полный dependency/license/provenance audit не завершён. Cargo.lock закрепляет граф, но не подтверждает безопасность, лицензии или доверенность источников.
 - PR #14 не слит.
