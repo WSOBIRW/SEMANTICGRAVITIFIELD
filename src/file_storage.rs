@@ -191,7 +191,9 @@ impl FileRecoveryStorage {
         // CURRENT has a fixed-size encoding. Bound the read before allocation.
         let mut current_file = File::open(&current_path)?;
         let mut current_bytes = Vec::with_capacity(CURRENT_LEN + 1);
-        current_file.take((CURRENT_LEN + 1) as u64).read_to_end(&mut current_bytes)?;
+        current_file
+            .take((CURRENT_LEN + 1) as u64)
+            .read_to_end(&mut current_bytes)?;
         let pointer = CurrentPointer::decode(&current_bytes)?;
         let generation_dir = self.generation_dir(pointer.generation);
 
@@ -374,7 +376,10 @@ fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
         Err(error) => return Err(error.into()),
     }
 
-    let parent = path.parent().filter(|value| !value.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     create_dir_all_synced(parent)?;
 
     match fs::create_dir(path) {
@@ -588,8 +593,11 @@ mod tests {
     fn oversized_current_pointer_is_rejected_after_bounded_read() {
         let directory = TestDirectory::new();
         let storage = FileRecoveryStorage::open(directory.path()).unwrap();
-        fs::write(directory.path().join("CURRENT"), vec![0_u8; CURRENT_LEN + 1024 * 1024])
-            .unwrap();
+        fs::write(
+            directory.path().join("CURRENT"),
+            vec![0_u8; CURRENT_LEN + 1024 * 1024],
+        )
+        .unwrap();
 
         assert!(matches!(
             storage.load_current(),
@@ -652,15 +660,23 @@ mod tests {
 
             if matches!(
                 fail_stage,
-                CommitStage::GenerationPublished | CommitStage::GenerationsDirectorySynced | CommitStage::CurrentSynced
+                CommitStage::GenerationPublished
+                    | CommitStage::GenerationsDirectorySynced
+                    | CommitStage::CurrentSynced
             ) {
                 // Preserve a complete but unpublished successor; fail closed.
                 assert!(storage.commit_generation(Some(1), package(2)).is_err());
                 assert!(storage.generation_dir(2).join("manifest.bin").exists());
-                assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 1);
+                assert_eq!(
+                    storage.load_current().unwrap().unwrap().manifest.generation,
+                    1
+                );
             } else if expected_generation == 1 {
                 storage.commit_generation(Some(1), package(2)).unwrap();
-                assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 2);
+                assert_eq!(
+                    storage.load_current().unwrap().unwrap().manifest.generation,
+                    2
+                );
             }
         }
     }
