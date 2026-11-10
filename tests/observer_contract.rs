@@ -28,12 +28,16 @@ fn procedure() -> ObservationProcedure {
 }
 
 fn record() -> ObservationRecord {
+    let descriptor = observer();
+    let method = procedure();
     ObservationRecord {
         observation_id: "observation-a".into(),
         observer_id: "observer-a".into(),
         observer_version: 2,
         procedure_id: "procedure-a".into(),
         procedure_version: 1,
+        observer_definition_digest: descriptor.definition_digest(),
+        procedure_definition_digest: method.definition_digest(),
         target_ref: "market:BTC-USDT".into(),
         started_at_ms: 1_000,
         completed_at_ms: 2_000,
@@ -190,6 +194,58 @@ fn rejects_observer_identity_or_version_mismatch() {
     assert_eq!(
         observation.validate_against(&wrong_version, &procedure()),
         Err(ObserverValidationError::ObserverVersionMismatch)
+    );
+}
+
+#[test]
+fn rejects_changed_procedure_definition_with_same_identity_and_version() {
+    let observation = record();
+    let mut changed = procedure();
+    changed.configuration_ref = "sha256:configuration-b".into();
+
+    assert_eq!(
+        observation.validate_against(&observer(), &changed),
+        Err(ObserverValidationError::ProcedureDefinitionDigestMismatch)
+    );
+}
+
+#[test]
+fn rejects_changed_observer_definition_with_same_identity_and_version() {
+    let observation = record();
+    let mut changed = observer();
+    changed.capability_codes = vec!["different.capability".into()];
+
+    assert_eq!(
+        observation.validate_against(&changed, &procedure()),
+        Err(ObserverValidationError::ObserverDefinitionDigestMismatch)
+    );
+}
+
+#[test]
+fn definition_digests_are_deterministic_and_cover_ordered_fields() {
+    let original_observer = observer();
+    let original_procedure = procedure();
+    assert_eq!(
+        original_observer.definition_digest(),
+        observer().definition_digest()
+    );
+    assert_eq!(
+        original_procedure.definition_digest(),
+        procedure().definition_digest()
+    );
+
+    let mut reordered = original_observer.clone();
+    reordered.capability_codes.reverse();
+    assert_ne!(
+        original_observer.definition_digest(),
+        reordered.definition_digest()
+    );
+
+    let mut changed_channel = original_procedure.clone();
+    changed_channel.channel_code = "http-polling".into();
+    assert_ne!(
+        original_procedure.definition_digest(),
+        changed_channel.definition_digest()
     );
 }
 
