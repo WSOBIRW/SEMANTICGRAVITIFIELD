@@ -31,3 +31,10 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Запустить тесты
         run: cargo test --all-targets --all-features
+      - name: Временно экспортировать Cargo.lock для фиксации resolved graph
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
