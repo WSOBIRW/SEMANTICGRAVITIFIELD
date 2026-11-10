@@ -802,6 +802,78 @@ mod tests {
     }
 
     #[test]
+    fn recovery_artifact_per_file_budget_is_enforced_before_read() {
+        let directory = TestDirectory::new();
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        let limits = ArtifactReadLimits {
+            max_snapshot_bytes: 0,
+            ..ArtifactReadLimits::default()
+        };
+        let bounded = FileRecoveryStorage::open_with_limits(directory.path(), limits).unwrap();
+
+        assert!(matches!(
+            bounded.load_current(),
+            Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                artifact: "snapshot",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn recovery_artifact_aggregate_budget_is_enforced_before_read() {
+        let directory = TestDirectory::new();
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        let limits = ArtifactReadLimits {
+            max_total_bytes: 0,
+            ..ArtifactReadLimits::default()
+        };
+        let bounded = FileRecoveryStorage::open_with_limits(directory.path(), limits).unwrap();
+
+        assert!(matches!(
+            bounded.load_current(),
+            Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                artifact: "aggregate",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn recovery_artifact_growth_during_read_is_still_bounded() {
+        let directory = TestDirectory::new();
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        let journal = directory
+            .path()
+            .join("generations")
+            .join("g-00000000000000000001")
+            .join("journal.bin");
+        let file = OpenOptions::new().write(true).open(&journal).unwrap();
+        file.set_len(128).unwrap();
+
+        let limits = ArtifactReadLimits {
+            max_journal_bytes: 64,
+            max_total_bytes: 1024,
+            ..ArtifactReadLimits::default()
+        };
+        let bounded = FileRecoveryStorage::open_with_limits(directory.path(), limits).unwrap();
+
+        assert!(matches!(
+            bounded.load_current(),
+            Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                artifact: "journal",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn corrupt_current_pointer_fails_closed() {
         let directory = TestDirectory::new();
         let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
