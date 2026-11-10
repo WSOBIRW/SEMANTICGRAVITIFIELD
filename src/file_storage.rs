@@ -189,7 +189,7 @@ impl FileRecoveryStorage {
             return Err(FileRecoveryStorageError::InvalidCurrent);
         }
         // CURRENT has a fixed-size encoding. Bound the read before allocation.
-        let mut current_file = File::open(&current_path)?;
+        let current_file = File::open(&current_path)?;
         let mut current_bytes = Vec::with_capacity(CURRENT_LEN + 1);
         current_file
             .take((CURRENT_LEN + 1) as u64)
