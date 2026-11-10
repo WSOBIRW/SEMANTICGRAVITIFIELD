@@ -103,10 +103,7 @@ pub enum ObserverValidationError {
 impl ObserverDescriptor {
     /// Неизвестные коды типов допустимы и не интерпретируются модулем.
     pub fn validate(&self) -> Result<(), ObserverValidationError> {
-        require_non_empty(
-            &self.observer_id,
-            ObserverValidationError::EmptyObserverId,
-        )?;
+        require_non_empty(&self.observer_id, ObserverValidationError::EmptyObserverId)?;
         require_non_empty(
             &self.observer_type,
             ObserverValidationError::EmptyObserverType,
@@ -167,18 +164,12 @@ impl ObservationRecord {
             &self.observation_id,
             ObserverValidationError::EmptyObservationId,
         )?;
-        require_non_empty(
-            &self.observer_id,
-            ObserverValidationError::EmptyObserverId,
-        )?;
+        require_non_empty(&self.observer_id, ObserverValidationError::EmptyObserverId)?;
         require_non_empty(
             &self.procedure_id,
             ObserverValidationError::EmptyProcedureId,
         )?;
-        require_non_empty(
-            &self.target_ref,
-            ObserverValidationError::EmptyTargetRef,
-        )?;
+        require_non_empty(&self.target_ref, ObserverValidationError::EmptyTargetRef)?;
 
         if self.observer_version == 0 {
             return Err(ObserverValidationError::ZeroObservationObserverVersion);
