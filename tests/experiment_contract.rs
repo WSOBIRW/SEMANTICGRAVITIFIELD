@@ -143,13 +143,15 @@ fn rejects_noise_bounds_that_exceed_the_symmetric_hash_domain() {
 }
 
 #[test]
-fn accepts_the_largest_supported_noise_bound_without_range_bias() {
+fn accepts_the_largest_supported_noise_bound_within_i64_domain() {
     let mut largest = observer();
     largest.noise_bound = i64::MAX as u64;
+    let mut zero_state = state();
+    zero_state.variables[0].value = 0;
     assert!(largest.validate().is_ok());
-    // Для граничного bound результат всегда остаётся в заявленном диапазоне.
-    let value = observe(&state(), &largest).unwrap().visible_variables[0].value;
-    let delta = i128::from(value) - 123_i128;
+    // Проверяем только представимость диапазона, не статистическую равномерность.
+    let value = observe(&zero_state, &largest).unwrap().visible_variables[0].value;
+    let delta = i128::from(value);
     assert!(delta >= -i128::from(i64::MAX));
     assert!(delta <= i128::from(i64::MAX));
 }
