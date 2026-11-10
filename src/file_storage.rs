@@ -374,12 +374,7 @@ fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
         Err(error) => return Err(error.into()),
     }
 
-    let parent = path.parent().ok_or_else(|| {
-        FileRecoveryStorageError::Io(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "directory path has no parent",
-        ))
-    })?;
+    let parent = path.parent().filter(|value| !value.as_os_str().is_empty()).unwrap_or(Path::new("."));
     create_dir_all_synced(parent)?;
 
     match fs::create_dir(path) {
@@ -642,14 +637,18 @@ mod tests {
             };
             assert_eq!(current.manifest.generation, expected_generation);
 
-            // Следующая запись должна удалить staging/orphan и продолжить с актуального поколения.
-            if expected_generation == 1 {
+            if matches!(
+                fail_stage,
+                CommitStage::GenerationPublished | CommitStage::GenerationsDirectorySynced
+            ) {
+                // Preserve a complete but unpublished successor; fail closed.
+                assert!(storage.commit_generation(Some(1), package(2)).is_err());
+                assert!(storage.generation_dir(2).join("manifest.bin").exists());
+                assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 1);
+            } else if expected_generation == 1 {
                 storage.commit_generation(Some(1), package(2)).unwrap();
+                assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 2);
             }
-            assert_eq!(
-                storage.load_current().unwrap().unwrap().manifest.generation,
-                2
-            );
         }
     }
     #[test]
