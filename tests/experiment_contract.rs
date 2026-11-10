@@ -164,7 +164,10 @@ fn observation_preserves_state_order_not_access_list_order() {
     let view = observe(&state(), &reversed).unwrap();
 
     assert_eq!(
-        view.visible_variables.iter().map(|item| item.key.as_str()).collect::<Vec<_>>(),
+        view.visible_variables
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>(),
         vec!["alpha", "beta"]
     );
 }
