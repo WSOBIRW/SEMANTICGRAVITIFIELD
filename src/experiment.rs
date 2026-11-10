@@ -30,6 +30,8 @@ pub struct SyntheticObserver {
     /// Шаг квантования; 1 означает отсутствие квантования.
     pub resolution: u64,
     /// Максимальная абсолютная добавляемая ошибка измерения.
+    /// Значение не может превышать i64::MAX: генератор использует
+    /// 64-битное пространство для представления симметричного диапазона.
     pub noise_bound: u64,
     /// Seed локального детерминированного шума.
     pub noise_seed: u64,
@@ -68,6 +70,7 @@ pub enum ExperimentError {
     EmptyObserverId,
     ZeroObserverVersion,
     ZeroResolution,
+    NoiseBoundOutOfRange,
     DuplicateVisibleKey,
     UnknownVisibleKey,
     MissingInterventionTarget,
@@ -106,6 +109,9 @@ impl SyntheticObserver {
         }
         if self.resolution == 0 {
             return Err(ExperimentError::ZeroResolution);
+        }
+        if self.noise_bound > i64::MAX as u64 {
+            return Err(ExperimentError::NoiseBoundOutOfRange);
         }
         for (index, key) in self.visible_keys.iter().enumerate() {
             if self.visible_keys[..index].iter().any(|previous| previous == key) {
@@ -221,6 +227,8 @@ fn deterministic_noise(
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
 
+    // Для bound <= i64::MAX ширина 2 * bound + 1 помещается в u64.
+    // Преобразование в i128 до сложения исключает переполнение.
     let bound = i128::from(bound);
     let width = bound * 2 + 1;
     i128::from(hash) % width - bound
