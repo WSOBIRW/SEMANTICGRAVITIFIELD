@@ -289,6 +289,7 @@ impl FileRecoveryStorage {
             }
 
             fs::rename(&stage_dir, &final_dir)?;
+            stage_created = false;
             hook(CommitStage::GenerationPublished)?;
             sync_directory(&generations_dir)?;
             hook(CommitStage::GenerationsDirectorySynced)?;
@@ -309,6 +310,7 @@ impl FileRecoveryStorage {
             current_file.sync_all()?;
             hook(CommitStage::CurrentSynced)?;
             fs::rename(&current_temp, self.root.join("CURRENT"))?;
+            current_temp_created = false;
             hook(CommitStage::CurrentPublished)?;
             sync_directory(&self.root)?;
             hook(CommitStage::RootDirectorySynced)?;
