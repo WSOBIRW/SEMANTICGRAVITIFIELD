@@ -54,7 +54,7 @@
 
 Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/11
 
-- Состояние: OPEN, не слит.
+- Состояние: OPEN, не слит; исходная ветка отстала от main и признана superseded кандидатом PR #14. Не сливать PR #11 отдельно.
 - Ветка: `feat/file-generation-recovery-storage`.
 - Новый кодовый HEAD после устранения finding по ограничению чтения: `ca922103df458b52b8e7f20b2979510830f0aa4e`.
 - На промежуточном merge HEAD `5804df30` CI run #275 завершился FAIL только на rustfmt. Ошибка форматирования исправлена в `ca922103`; новый CI на точном HEAD ожидается. Clippy и тесты в run #275 были пропущены.
@@ -90,6 +90,22 @@
 - orphan/staging directories могут накапливаться до появления безопасного descriptor-relative GC.
 
 Перед принятием необходимо завершить независимое code/security review на актуальном SHA, получить актуальный CI и закрыть finding по воспроизводимой фиксации и аудиту транзитивных зависимостей.
+### PR #14 — Recovery Storage с ограниченными чтениями
+
+Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/14
+
+- Состояние: OPEN, не слит.
+- Ветка: `feat/file-generation-recovery-storage-current`, создана от актуального `main` для устранения расхождения старой ветки PR #11 с main.
+- Текущий HEAD: `92e47530cb0258b4a41046b641209b96430f057d`.
+- Реализация файлового backend перенесена в чистую ветку; PR содержит Cargo.toml, src/lib.rs, src/file_storage.rs и временное изменение CI workflow для экспорта Cargo.lock. Временный workflow шаг должен быть удалён после получения lockfile.
+- Реализованы configurable per-artifact и aggregate бюджеты чтения; размеры всех файлов и сумма проверяются до выделения буферов. Aggregate budget дополнительно пересчитывается по фактически прочитанным байтам между последовательными чтениями, чтобы рост файлов после metadata check не обходил совокупный предел.
+- Добавлены тесты на per-file budget, aggregate budget, рост файла и bounded reader при росте после проверки размера.
+- Code review автоматически запущен при открытии PR на первоначальном HEAD `cb456301`; повторная проверка актуального HEAD `92e4753` запрошена. Завершённый актуальный review пока не подтверждён.
+- Отдельный security review актуального HEAD запрошен; результат пока не подтверждён.
+- CI на актуальном HEAD пока не подтверждён. Локальный Rust toolchain в рабочей среде отсутствует.
+- Cargo.lock ещё не добавлен; в workflow временно добавлен экспорт генерируемого Cargo.lock как артефакта для последующей фиксации и аудита. До появления lockfile dependency graph не считается закреплённым.
+- PR #14 не слит.
+
 ### PR #13 — Deterministic Synthetic Observer Experiment Core
 
 Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/13
