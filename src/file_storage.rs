@@ -712,8 +712,14 @@ mod tests {
         let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
         storage.commit_generation(None, package(1)).unwrap();
 
-        assert_eq!(fs::read(outside.path().join("preserve.txt")).unwrap(), b"keep");
-        assert_eq!(storage.load_current().unwrap().unwrap().manifest.generation, 1);
+        assert_eq!(
+            fs::read(outside.path().join("preserve.txt")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            storage.load_current().unwrap().unwrap().manifest.generation,
+            1
+        );
     }
     #[cfg(unix)]
     #[test]
