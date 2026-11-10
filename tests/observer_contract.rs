@@ -238,10 +238,7 @@ fn definition_digests_are_deterministic_and_cover_ordered_fields() {
     ordered.capability_codes = vec!["capability-a".into(), "capability-b".into()];
     let mut reordered = ordered.clone();
     reordered.capability_codes.reverse();
-    assert_ne!(
-        ordered.definition_digest(),
-        reordered.definition_digest()
-    );
+    assert_ne!(ordered.definition_digest(), reordered.definition_digest());
 
     let mut changed_channel = original_procedure.clone();
     changed_channel.channel_code = "http-polling".into();
