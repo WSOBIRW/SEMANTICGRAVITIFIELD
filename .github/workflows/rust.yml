@@ -31,3 +31,21 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Запустить тесты
         run: cargo test --locked --all-targets --all-features
+      - name: Проверить источники и лицензии зависимостей
+        shell: bash
+        run: |
+          cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          jq -e '
+            [.packages[] | select(.source != null)] as $packages
+            | ($packages | length > 0)
+            and all($packages[];
+              .source == "registry+https://github.com/rust-lang/crates.io-index"
+              and (.license != null)
+              and (
+                .license
+                | split(" OR ")
+                | all(.[]; . == "MIT" or . == "Apache-2.0" or . == "BSD-3-Clause")
+              )
+            )
+          ' "$RUNNER_TEMP/cargo-metadata.json" > /dev/null
+          jq -r '.packages[] | select(.source != null) | [.name, .version, .license, .source] | @tsv' "$RUNNER_TEMP/cargo-metadata.json"
