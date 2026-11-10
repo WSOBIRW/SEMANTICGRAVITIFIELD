@@ -157,7 +157,7 @@ fn deterministic_noise_is_scoped_to_the_sample_step() {
     next_state.step += 1;
     let second = observe(&next_state, &noisy).unwrap();
 
-    assert_ne!(first, second);
+    assert_ne!(first.visible_variables[0].value, second.visible_variables[0].value);
 }
 
 #[test]
