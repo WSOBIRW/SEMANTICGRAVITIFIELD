@@ -4,6 +4,7 @@
 //! Оно не формирует торговые сигналы и не исполняет ордера.
 
 pub mod event;
+pub mod experiment;
 pub mod journal;
 pub mod observer;
 pub mod prevention;
