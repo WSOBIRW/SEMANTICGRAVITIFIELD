@@ -58,8 +58,10 @@ pub struct ObservationProcedure {
     pub configuration_ref: String,
 }
 
-/// Неизменяемая запись акта наблюдения и его происхождения.
-/// Исходное содержимое хранится отдельно, evidence_refs указывает на него.
+/// Метаданные акта наблюдения и его происхождения.
+/// Исходное содержимое хранится отдельно; evidence_refs указывает на него.
+/// Структура изменяема в памяти. Неизменяемость сохранённых доказательств
+/// должна обеспечиваться отдельным контрактом хранилища.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObservationRecord {
     pub observation_id: String,
@@ -98,6 +100,10 @@ pub enum ObserverValidationError {
     ZeroObservationProcedureVersion,
     MissingEvidenceReference,
     EmptyEvidenceReference,
+    ObserverIdentityMismatch,
+    ObserverVersionMismatch,
+    ProcedureIdentityMismatch,
+    ProcedureVersionMismatch,
 }
 
 impl ObserverDescriptor {
@@ -159,6 +165,32 @@ impl ObservationProcedure {
 }
 
 impl ObservationRecord {
+    /// Проверяет локальную структуру и точное соответствие версий.
+    pub fn validate_against(
+        &self,
+        observer: &ObserverDescriptor,
+        procedure: &ObservationProcedure,
+    ) -> Result<(), ObserverValidationError> {
+        self.validate()?;
+        observer.validate()?;
+        procedure.validate()?;
+
+        if self.observer_id != observer.observer_id {
+            return Err(ObserverValidationError::ObserverIdentityMismatch);
+        }
+        if self.observer_version != observer.version {
+            return Err(ObserverValidationError::ObserverVersionMismatch);
+        }
+        if self.procedure_id != procedure.procedure_id {
+            return Err(ObserverValidationError::ProcedureIdentityMismatch);
+        }
+        if self.procedure_version != procedure.version {
+            return Err(ObserverValidationError::ProcedureVersionMismatch);
+        }
+
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), ObserverValidationError> {
         require_non_empty(
             &self.observation_id,
