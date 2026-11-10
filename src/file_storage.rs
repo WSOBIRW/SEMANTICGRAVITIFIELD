@@ -191,6 +191,7 @@ impl FileRecoveryStorage {
         Self::open_with_limits_and_hook(root, read_limits, |_| Ok(()))
     }
 
+    #[cfg(test)]
     fn open_with_hook<F>(root: impl AsRef<Path>, hook: F) -> Result<Self, FileRecoveryStorageError>
     where
         F: FnMut(CommitStage) -> io::Result<()>,
