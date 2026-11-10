@@ -295,6 +295,7 @@ impl FileRecoveryStorage {
                 .create_new(true)
                 .open(&current_temp)?;
             current_temp_created = true;
+            hook(CommitStage::CurrentTempReserved)?;
 
             fs::rename(&stage_dir, &final_dir)?;
             stage_created = false;
@@ -385,6 +386,7 @@ enum CommitStage {
     JournalSynced,
     ManifestSynced,
     StagingDirectorySynced,
+    CurrentTempReserved,
     GenerationPublished,
     GenerationsDirectorySynced,
     CurrentSynced,
@@ -668,6 +670,7 @@ mod tests {
             CommitStage::JournalSynced,
             CommitStage::ManifestSynced,
             CommitStage::StagingDirectorySynced,
+            CommitStage::CurrentTempReserved,
             CommitStage::GenerationPublished,
             CommitStage::GenerationsDirectorySynced,
             CommitStage::CurrentSynced,
