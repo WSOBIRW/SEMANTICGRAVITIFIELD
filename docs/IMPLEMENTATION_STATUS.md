@@ -5,12 +5,13 @@
 Прототип: 0.1.0  
 Язык ядра: Rust  
 Репозиторий: WSOBIRW/SEMANTICGRAVITIFIELD  
-Актуальная проверенная база документации на момент записи: main после коммита с обновлением ROADMAP.md.  
+Проверенная база документации перед этим обновлением: main, commit `29384c75882b2334e78602500d4d46ab3e19b934`.  
 Назначение реализованного ядра: проверка входных рыночных событий, предотвращение повторов и некорректного порядка, snapshot/journal/replay и контракты долговечного восстановления.
 
-## Архитектурная документация
+Этот документ фиксирует фактическое состояние на момент коммита. Любой CI/review результат относится только к явно указанному SHA.
 
-Зафиксированы в main:
+## Архитектурная документация в main
+
 - ARCHITECTURE.md — назначение, контуры, инварианты и границы доверия.
 - ARCHITECTURAL_CONSTRAINTS_REGISTER.md — постоянные инварианты, временные ограничения MVP, ограничения backend и правила эволюции.
 - EVIDENCE_MODEL.md — доказательства, качество и независимость источников.
@@ -21,10 +22,11 @@
 - DECISION_CONTRACT.md — результаты и защитные вердикты.
 - INTERFACE_CONTRACT.md — внешний контракт.
 - IDENTITY_AND_TIME_MODEL.md — целевая модель идентичности и времени; реализация ещё не включена в ядро.
+- EVENT_SCHEMA_EVOLUTION.md — контракт эволюции событий, opaque preservation и миграции; реализация ещё не включена в ядро.
 - ROADMAP.md — этапы развития.
 - AUDIT_FINDINGS.md — findings раннего аудита.
 - SNAPSHOT_FORMAT.md, JOURNAL_FORMAT.md, RECOVERY_MANIFEST.md — форматы восстановления.
-- FILE_STORAGE_BACKEND.md — проект первого файлового backend.
+- FILE_STORAGE_BACKEND.md — контракт первого файлового backend.
 
 Наличие нормативного документа не означает реализацию описанной подсистемы.
 
@@ -46,34 +48,47 @@
 
 ## В разработке, не включено в main
 
-**PR #11 — File Generation Recovery Storage**  
-Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/11  
-Последний известный HEAD: c1523926a68149c16849d9ec441e67375ac5e1a7.  
-Статус: открыт, не слит.
+### PR #11 — File Generation Recovery Storage
+
+Ссылка: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/11
+
+- Состояние: OPEN, не слит.
+- Ветка: `feat/file-generation-recovery-storage`.
+- Проверенный HEAD: `af2029b25ea0e26202d4b4aa30c7ffd801aaf291`.
+- CI: GitHub Actions run #211, SUCCESS на указанном HEAD: rustfmt PASS, Clippy PASS, тесты PASS.
+- Независимый Codex code review на этом HEAD: RUNNING на момент последней проверки.
+- Отдельный завершённый security review на этом HEAD не подтверждён.
+- Все 8 существующих inline review threads помечены resolved; 7 из них относятся к устаревшим строкам/ревизиям. Разрешение thread не является независимым доказательством безопасности.
+- PR не сливался.
 
 Реализовано в ветке PR:
 - Unix file-generation backend на std::fs;
-- CURRENT, .writer.lock, generations/ и .staging/;
-- immutable generation directories со snapshot, journal и manifest;
+- CURRENT, постоянный .writer.lock, generations/ и уникальные .staging-* непосредственно в корне;
+- неизменяемые generation directories со snapshot, journal и manifest;
 - межпроцессная advisory-блокировка и CAS под lock;
+- ограниченное чтение CURRENT до декодирования;
+- запрет перезаписи/удаления существующих generation directories при commit;
+- синхронизация родительских каталогов для создаваемых и уже существующих компонентов пути;
 - синхронизация файлов и каталогов и атомарная публикация CURRENT;
-- проверки повреждений и crash injection tests.
+- автоматическая очистка staging и GC поколений намеренно отключены;
+- негативные тесты повреждений, symlink, orphan generation и crash points.
 
-GitHub Actions run #187 на указанном HEAD: fmt PASS, Clippy PASS, 50 unit tests PASS, 1 integration test PASS. Эти результаты относятся к конкретному SHA и не заменяют security review.
+Важные границы:
+- path-based std::fs backend не является песочницей от злонамеренного локального пользователя; root path и родительские компоненты должны быть доверенными и недоступными для записи недоверенным процессам;
+- NFS/SMB и другие сетевые ФС не заявлены поддерживаемыми;
+- SHA-256/CAS не обеспечивают защиту от rollback всего каталога;
+- тесты процесса не доказывают устойчивость к физической потере питания и аппаратным отказам;
+- orphan/staging directories могут накапливаться до появления безопасного descriptor-relative GC.
 
-**PR #11 заблокирован актуальными незакрытыми review findings:**
-- P1: долговечность записей вновь созданных root/ancestor directory entries в родительских каталогах;
-- P1: нельзя удалять существующее поколение successor, пока не доказано, что оно безопасный orphan; восстановленный старый CURRENT не должен уничтожать более новое целое поколение;
-- P2: защита от TOCTOU при проверке и перечислении .staging;
-- P2: ограниченное чтение CURRENT до выделения памяти, не более фиксированного размера плюс один байт.
-
-Три прежних review threads отмечены resolved, но четыре более поздних замечания остаются unresolved. PR не готов к слиянию. Устранение замечания автором и отметка thread как resolved сами по себе не являются независимым подтверждением исправления.
+Ветка PR основана на `d119f4eeb606082c0628bf5bd5e8bf476a059d76`. Main после него продвинулся отдельными документальными коммитами. Перед принятием необходимо повторно подтвердить интеграцию с актуальным main и CI на окончательном интегрированном SHA.
 
 ## Не реализовано
 
 - Независимый anti-rollback trust anchor вне failure domain файлового backend.
 - Политика retention/GC с безопасностью для активных readers.
-- session_id, stream generation и формальная reconnect identity.
+- session_id, stream generation и формальная reconnect identity в исполняемом ядре.
+- Расширяемая схема событий и opaque preservation в коде.
+- Миграция SGFS/SGFJ/SGFM между версиями.
 - Out-of-order buffering и обработка поздних событий.
 - Полная реконструкция рыночного состояния и completeness model.
 - Полная provenance-модель производных данных в исполняемом коде.
@@ -101,13 +116,15 @@ GitHub Actions run #187 на указанном HEAD: fmt PASS, Clippy PASS, 50 
 
 ## Ближайшие приоритеты
 
-1. Закрыть четыре актуальных security review findings PR #11 и повторно проверить весь diff на точном новом HEAD.
-2. Получить независимое ревью файловых операций и подтвердить CI на том же SHA; до этого не сливать PR.
-3. Уточнить event/stream/session identity и temporal semantics через контракт и миграционный план.
-4. Спроектировать расширяемую схему событий и безопасное сохранение неизвестных типов.
-5. Добавить совместимость форматов и негативные тесты, не ломая SGFS v1 / SGFJ v1 / SGFM v1.
-6. Продолжить Reconstruction, Semantic Intelligence и Independent Verification по отдельным доказательным этапам.
+1. Получить завершённое независимое code review PR #11 на точном HEAD; проверить новые findings, если они появятся.
+2. Выполнить интеграционную проверку PR #11 относительно актуального main и повторить CI на итоговом SHA.
+3. Провести отдельную проверку модели угроз файлового backend, включая symlink/TOCTOU, конкурентные open/writers, crash consistency и локального противника.
+4. Сравнить file-generation backend и SQLite по требованиям, отказам и эксплуатации.
+5. Определить независимый anti-rollback trust anchor и безопасную retention/GC модель.
+6. Реализовать внутреннюю event/stream/session identity по IDENTITY_AND_TIME_MODEL.md и EVENT_SCHEMA_EVOLUTION.md.
+7. Добавить v1 fixtures, legacy adapter, opaque preservation и отдельные версии форматов с миграционными тестами.
+8. Продолжить Reconstruction, Semantic Intelligence и Independent Verification по отдельным доказательным этапам.
 
 ## Правило статуса
 
-Статус «реализовано» означает, что код находится в main. Открытый PR, проект документа, интерфейс, тестовый сценарий или заявленная возможность не считаются частью принятой реализации. Любой PASS привязывается к конкретному SHA и конкретному набору проверок.
+Статус «реализовано» означает, что код находится в main. Открытый PR, проект документа, интерфейс, тестовый сценарий или заявленная возможность не считаются частью принятой реализации. Любой PASS привязывается к точному commit SHA, конкретному CI run и набору проверок.
