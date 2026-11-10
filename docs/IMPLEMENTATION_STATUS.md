@@ -130,8 +130,8 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/observer-foundation`.
-- Текущий HEAD: `530dc078b93a5e8b3466096be5491d20978deeed`.
-- CI run #251 на точном HEAD: SUCCESS; rustfmt PASS, Clippy PASS, 41 unit tests + 1 existing integration test + 12 observer integration tests PASS.
+- Новый HEAD после исправления подмены определений: `c485ca7c88ed6f10531d046ecc7e02214a85f585`.
+- CI run #251 на старом HEAD `530dc07` был SUCCESS (41 unit + 1 integration + 12 observer tests). На новом HEAD run #291: rustfmt PASS, Clippy PASS, 41 unit + 1 integration + 15 из 16 observer tests PASS; один новый тест порядка digest упал из-за тестовой ошибки (список из одного элемента не менялся при reverse). Исправление теста внесено в `c485ca7`; повторный CI ожидается.
 - Добавлены ObserverDescriptor, ObservationProcedure и ObservationRecord.
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
 - Добавлены расширяемые коды типов и явные значения Unknown для классификаций процедуры.
@@ -141,6 +141,11 @@
 - На последней проверке PR #12: OPEN, HEAD `530dc078b93a5e8b3466096be5491d20978deeed`; CI #251 SUCCESS; code review завершён без findings; отдельный security review повторно запрошен, но завершённый результат не подтверждён; review submissions и inline threads отсутствуют.
 - PR не сливался. Структурная валидация не подтверждает истинность наблюдения, независимость наблюдателей или причинное влияние измерения.
 
+
+- Новый P2 finding review: validate_against сравнивал только ID/version и пропускал подмену configuration_ref или других полей процедуры при сохранении ID/version. Исправлено каноническими SHA-256 digest полных ObserverDescriptor и ObservationProcedure; digest содержит domain separator, длины строк/списков, все поля и явные коды enum. ObservationRecord хранит оба digest; validate_against проверяет их вместе с ID/version.
+- Добавлены негативные тесты подмены конфигурации процедуры, capability наблюдателя и digest в записи; тест детерминизма/порядка использует два элемента, чтобы реально проверять чувствительность к порядку.
+- Digest не является подписью и не подтверждает происхождение. Если вызывающая сторона может одновременно заменить определение и digest записи, доверие не возникает; необходим внешний trust anchor для аутентификации.
+- Finding reply отправлен и inline thread разрешён. Повторный code review и отдельный security review запрошены на новом HEAD; завершённые результаты пока не подтверждены.
 ## Не реализовано
 
 - Исполняемая модель Observer/ObservationProcedure в main: первый типизированный слой находится в открытом PR #12 и не считается принятой реализацией.
