@@ -954,6 +954,32 @@ mod tests {
     }
 
     #[test]
+    fn bounded_reader_handles_zero_budget_without_buffer_growth() {
+        let directory = TestDirectory::new();
+        let empty_path = directory.path().join("empty.bin");
+        fs::write(&empty_path, []).unwrap();
+        let empty = read_bounded_artifact(File::open(&empty_path).unwrap(), "manifest", 0, 0)
+            .unwrap();
+        assert!(empty.is_empty());
+
+        let nonempty_path = directory.path().join("nonempty.bin");
+        fs::write(&nonempty_path, [1_u8]).unwrap();
+        assert!(matches!(
+            read_bounded_artifact(
+                File::open(&nonempty_path).unwrap(),
+                "manifest",
+                0,
+                0
+            ),
+            Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                artifact: "manifest",
+                size: 1,
+                limit: 0
+            })
+        ));
+    }
+
+    #[test]
     fn bounded_reader_enforces_remaining_aggregate_budget_after_file_growth() {
         let directory = TestDirectory::new();
         let path = directory.path().join("growing.bin");
