@@ -234,10 +234,12 @@ fn definition_digests_are_deterministic_and_cover_ordered_fields() {
         procedure().definition_digest()
     );
 
-    let mut reordered = original_observer.clone();
+    let mut ordered = original_observer.clone();
+    ordered.capability_codes = vec!["capability-a".into(), "capability-b".into()];
+    let mut reordered = ordered.clone();
     reordered.capability_codes.reverse();
     assert_ne!(
-        original_observer.definition_digest(),
+        ordered.definition_digest(),
         reordered.definition_digest()
     );
 
