@@ -570,6 +570,14 @@ fn read_bounded_artifact(
     initial_size: u64,
     limit: u64,
 ) -> Result<Vec<u8>, FileRecoveryStorageError> {
+    if initial_size > limit {
+        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+            artifact,
+            size: initial_size,
+            limit,
+        });
+    }
+
     let capacity = usize::try_from(initial_size)
         .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
     let mut bytes = Vec::new();
@@ -580,16 +588,41 @@ fn read_bounded_artifact(
         ))
     })?;
 
-    // The extra byte detects growth between metadata inspection and reading.
-    let mut reader = file.take(limit.saturating_add(1));
-    reader.read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > limit {
-        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
-            artifact,
-            size: bytes.len() as u64,
-            limit,
-        });
+    // Read in bounded chunks so Vec growth cannot overshoot the configured
+    // budget. Once the limit is reached, probe one byte without appending it.
+    let mut reader = file;
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let current_size = u64::try_from(bytes.len())
+            .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
+        if current_size == limit {
+            let mut extra = [0_u8; 1];
+            if reader.read(&mut extra)? != 0 {
+                return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                    artifact,
+                    size: limit.saturating_add(1),
+                    limit,
+                });
+            }
+            break;
+        }
+
+        let remaining = limit - current_size;
+        let chunk_size = remaining.min(chunk.len() as u64) as usize;
+        let read = reader.read(&mut chunk[..chunk_size])?;
+        if read == 0 {
+            break;
+        }
+
+        bytes.try_reserve_exact(read).map_err(|error| {
+            FileRecoveryStorageError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                format!("cannot grow recovery artifact buffer: {error}"),
+            ))
+        })?;
+        bytes.extend_from_slice(&chunk[..read]);
     }
+
     Ok(bytes)
 }
 
