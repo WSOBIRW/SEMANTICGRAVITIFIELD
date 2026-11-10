@@ -5,6 +5,8 @@
 //! явный apply_intervention. Типы здесь описывают синтетическую модель,
 //! а не онтологию реального смыслового поля.
 
+use std::collections::BTreeSet;
+
 /// Одно измеряемое свойство синтетической системы.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateVariable {
@@ -83,14 +85,12 @@ impl SyntheticState {
             return Err(ExperimentError::EmptyStateId);
         }
 
-        for (index, variable) in self.variables.iter().enumerate() {
+        let mut keys = BTreeSet::new();
+        for variable in &self.variables {
             if variable.key.trim().is_empty() {
                 return Err(ExperimentError::EmptyVariableKey);
             }
-            if self.variables[..index]
-                .iter()
-                .any(|previous| previous.key == variable.key)
-            {
+            if !keys.insert(variable.key.as_str()) {
                 return Err(ExperimentError::DuplicateVariableKey);
             }
         }
@@ -113,8 +113,9 @@ impl SyntheticObserver {
         if self.noise_bound > i64::MAX as u64 {
             return Err(ExperimentError::NoiseBoundOutOfRange);
         }
-        for (index, key) in self.visible_keys.iter().enumerate() {
-            if self.visible_keys[..index].iter().any(|previous| previous == key) {
+        let mut visible_keys = BTreeSet::new();
+        for key in &self.visible_keys {
+            if !visible_keys.insert(key.as_str()) {
                 return Err(ExperimentError::DuplicateVisibleKey);
             }
         }
@@ -132,16 +133,25 @@ pub fn observe(
 ) -> Result<ObservationView, ExperimentError> {
     state.validate()?;
     observer.validate()?;
-    for key in &observer.visible_keys {
-        if !state.variables.iter().any(|variable| &variable.key == key) {
-            return Err(ExperimentError::UnknownVisibleKey);
-        }
+    let state_keys: BTreeSet<&str> = state
+        .variables
+        .iter()
+        .map(|variable| variable.key.as_str())
+        .collect();
+    let visible_keys: BTreeSet<&str> = observer
+        .visible_keys
+        .iter()
+        .map(String::as_str)
+        .collect();
+
+    if visible_keys.iter().any(|key| !state_keys.contains(key)) {
+        return Err(ExperimentError::UnknownVisibleKey);
     }
 
     let mut visible_variables = Vec::new();
 
     for variable in &state.variables {
-        if !observer.visible_keys.iter().any(|key| key == &variable.key) {
+        if !visible_keys.contains(variable.key.as_str()) {
             continue;
         }
 
