@@ -171,3 +171,23 @@ fn observation_preserves_state_order_not_access_list_order() {
         vec!["alpha", "beta"]
     );
 }
+
+
+#[test]
+fn projection_filter_is_not_an_authorization_boundary() {
+    // SyntheticObserver is caller-controlled. The projection selects output
+    // fields but does not authenticate or authorize the caller.
+    let mut unrestricted_projection = observer();
+    unrestricted_projection.visible_keys = vec!["alpha".into(), "beta".into()];
+
+    let view = observe(&state(), &unrestricted_projection).unwrap();
+
+    assert_eq!(view.visible_variables.len(), 2);
+    assert_eq!(
+        view.visible_variables
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"]
+    );
+}
