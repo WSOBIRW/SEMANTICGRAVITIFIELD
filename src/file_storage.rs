@@ -4,7 +4,7 @@
 //! rename в пределах одной файловой системы. Доменное ядро не зависит от этого модуля.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -142,10 +142,10 @@ impl FileRecoveryStorage {
         F: FnMut(CommitStage) -> io::Result<()>,
     {
         let root = root.as_ref().to_path_buf();
-        fs::create_dir_all(&root)?;
+        create_dir_all_synced(&root)?;
         ensure_real_directory(&root)?;
-        fs::create_dir_all(root.join("generations"))?;
-        fs::create_dir_all(root.join(".staging"))?;
+        create_dir_all_synced(&root.join("generations"))?;
+        create_dir_all_synced(&root.join(".staging"))?;
         ensure_real_directory(&root.join("generations"))?;
         ensure_real_directory(&root.join(".staging"))?;
 
@@ -188,7 +188,10 @@ impl FileRecoveryStorage {
         if !current_metadata.file_type().is_file() || current_metadata.file_type().is_symlink() {
             return Err(FileRecoveryStorageError::InvalidCurrent);
         }
-        let current_bytes = fs::read(&current_path)?;
+        // CURRENT has a fixed-size encoding. Bound the read before allocation.
+        let mut current_file = File::open(&current_path)?;
+        let mut current_bytes = Vec::with_capacity(CURRENT_LEN + 1);
+        current_file.take((CURRENT_LEN + 1) as u64).read_to_end(&mut current_bytes)?;
         let pointer = CurrentPointer::decode(&current_bytes)?;
         let generation_dir = self.generation_dir(pointer.generation);
 
@@ -221,22 +224,6 @@ impl FileRecoveryStorage {
             .validate()
             .map_err(FileRecoveryStorageError::Recovery)?;
         Ok(Some(package))
-    }
-
-    fn cleanup_staging(&self) -> Result<(), FileRecoveryStorageError> {
-        let staging_root = self.root.join(".staging");
-        ensure_real_directory(&staging_root)?;
-        for entry in fs::read_dir(&staging_root)? {
-            let path = entry?.path();
-            let metadata = fs::symlink_metadata(&path)?;
-            if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
-                fs::remove_dir_all(path)?;
-            } else {
-                fs::remove_file(path)?;
-            }
-        }
-        sync_directory(&staging_root)?;
-        Ok(())
     }
 
     fn publish(&self, package: RecoveryPackage) -> Result<(), FileRecoveryStorageError> {
@@ -277,15 +264,10 @@ impl FileRecoveryStorage {
             sync_directory(&stage_dir)?;
             hook(CommitStage::StagingDirectorySynced)?;
 
-            // candidate generation is expected to be the immediate successor.
-            // An existing target can only be an orphan from a previous interrupted commit.
+            // Never replace an existing generation directory. It may contain
+            // a complete recovery package newer than a restored/stale CURRENT.
             match fs::symlink_metadata(&final_dir) {
-                Ok(metadata) => {
-                    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
-                        return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
-                    }
-                    fs::remove_dir_all(&final_dir)?;
-                }
+                Ok(_) => return Err(FileRecoveryStorageError::UnreferencedGenerationExists),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
@@ -338,8 +320,8 @@ impl RecoveryStorage for FileRecoveryStorage {
             .map_err(FileRecoveryStorageError::Io)
             .map_err(RecoveryStorageError::Backend)?;
 
-        self.cleanup_staging()
-            .map_err(RecoveryStorageError::Backend)?;
+        // Staging cleanup is intentionally disabled: path-based traversal is
+        // vulnerable to replacement races. Reclamation needs pinned no-follow handles.
         let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
         let actual_generation = current.as_ref().map(|value| value.manifest.generation);
         if actual_generation.is_none()
@@ -378,6 +360,34 @@ enum CommitStage {
     CurrentSynced,
     CurrentPublished,
     RootDirectorySynced,
+}
+
+fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+                return Ok(());
+            }
+            return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+
+    let parent = path.parent().ok_or_else(|| {
+        FileRecoveryStorageError::Io(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "directory path has no parent",
+        ))
+    })?;
+    create_dir_all_synced(parent)?;
+
+    match fs::create_dir(path) {
+        Ok(()) => sync_directory(parent)?,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => ensure_real_directory(path)?,
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
 }
 
 fn ensure_real_directory(path: &Path) -> Result<(), FileRecoveryStorageError> {
