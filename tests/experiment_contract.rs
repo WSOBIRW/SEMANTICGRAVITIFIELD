@@ -131,6 +131,36 @@ fn rejects_invalid_and_ambiguous_states() {
 }
 
 #[test]
+fn rejects_duplicate_or_unknown_visible_keys() {
+    let mut duplicate = observer();
+    duplicate.visible_keys = vec!["alpha".into(), "alpha".into()];
+    assert_eq!(
+        observe(&state(), &duplicate),
+        Err(ExperimentError::DuplicateVisibleKey)
+    );
+
+    let mut unknown = observer();
+    unknown.visible_keys = vec!["not-in-state".into()];
+    assert_eq!(
+        observe(&state(), &unknown),
+        Err(ExperimentError::UnknownVisibleKey)
+    );
+}
+
+#[test]
+fn deterministic_noise_is_scoped_to_the_sample_step() {
+    let mut noisy = observer();
+    noisy.noise_bound = 50;
+    let first = observe(&state(), &noisy).unwrap();
+
+    let mut next_state = state();
+    next_state.step += 1;
+    let second = observe(&next_state, &noisy).unwrap();
+
+    assert_ne!(first, second);
+}
+
+#[test]
 fn rejects_missing_intervention_target_and_overflow() {
     let missing = SyntheticIntervention {
         variable_key: "absent".into(),
