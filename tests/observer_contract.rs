@@ -250,6 +250,23 @@ fn definition_digests_are_deterministic_and_cover_ordered_fields() {
 }
 
 #[test]
+fn rejects_record_digest_substitution_even_when_ids_and_versions_match() {
+    let mut observation = record();
+    observation.observer_definition_digest[0] ^= 0x01;
+    assert_eq!(
+        observation.validate_against(&observer(), &procedure()),
+        Err(ObserverValidationError::ObserverDefinitionDigestMismatch)
+    );
+
+    let mut observation = record();
+    observation.procedure_definition_digest[0] ^= 0x01;
+    assert_eq!(
+        observation.validate_against(&observer(), &procedure()),
+        Err(ObserverValidationError::ProcedureDefinitionDigestMismatch)
+    );
+}
+
+#[test]
 fn rejects_procedure_identity_or_version_mismatch() {
     let observation = record();
 
