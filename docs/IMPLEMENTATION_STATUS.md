@@ -93,14 +93,14 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/observer-foundation`.
-- Текущий HEAD: `2aedf80bb120ebc7f49180b7334c0f5c8a0bddaf`.
-- CI run #247 на точном HEAD: SUCCESS; rustfmt PASS, Clippy PASS, тесты PASS.
+- Текущий HEAD: `530dc078b93a5e8b3466096be5491d20978deeed`.
+- CI run #251 на точном HEAD: SUCCESS; rustfmt PASS, Clippy PASS, 41 unit tests + 1 existing integration test + 12 observer integration tests PASS.
 - Добавлены ObserverDescriptor, ObservationProcedure и ObservationRecord.
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
 - Добавлены расширяемые коды типов и явные значения Unknown для классификаций процедуры.
 - Добавлены интеграционные позитивные и негативные тесты.
-- Независимый Codex code review запрошен повторно на точном HEAD `2aedf80`; завершённый результат этого ревью пока не подтверждён.
-- Отдельный security review на точном HEAD также не подтверждён.
+- Независимый Codex code review запрошен повторно на точном HEAD `530dc07`; на момент обновления выполняется, findings ещё не получены.
+- Отдельный security review на точном HEAD запрошен; запуск/завершение ещё не подтверждены.
 - PR не сливался. Структурная валидация не подтверждает истинность наблюдения, независимость наблюдателей или причинное влияние измерения.
 
 ## Не реализовано
