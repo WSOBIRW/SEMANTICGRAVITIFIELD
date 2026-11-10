@@ -9,7 +9,7 @@ fn observer() -> ObserverDescriptor {
         observer_type: "sensor.market-feed.v2".into(),
         version: 2,
         capability_codes: vec!["quote.capture".into()],
-        limitation_codes: vec!["no.hidden-liquidity".into()],
+        limitation_codes: vec!["no-hidden-liquidity".into()],
         dependency_refs: vec!["provider-a".into()],
     }
 }
@@ -52,8 +52,10 @@ fn accepts_explicit_observer_procedure_and_observation() {
 fn accepts_unknown_extensible_observer_and_procedure_codes() {
     let mut descriptor = observer();
     descriptor.observer_type = "future-domain.quantum-like-observer".into();
+
     let mut method = procedure();
     method.procedure_type = "future-domain.adaptive-probe".into();
+
     assert_eq!(descriptor.validate(), Ok(()));
     assert_eq!(method.validate(), Ok(()));
 }
@@ -62,11 +64,17 @@ fn accepts_unknown_extensible_observer_and_procedure_codes() {
 fn rejects_zero_versions() {
     let mut descriptor = observer();
     descriptor.version = 0;
-    assert_eq!(descriptor.validate(), Err(ObserverValidationError::ZeroObserverVersion));
+    assert_eq!(
+        descriptor.validate(),
+        Err(ObserverValidationError::ZeroObserverVersion)
+    );
 
     let mut method = procedure();
     method.version = 0;
-    assert_eq!(method.validate(), Err(ObserverValidationError::ZeroProcedureVersion));
+    assert_eq!(
+        method.validate(),
+        Err(ObserverValidationError::ZeroProcedureVersion)
+    );
 
     let mut observation = record();
     observation.observer_version = 0;
@@ -80,15 +88,24 @@ fn rejects_zero_versions() {
 fn rejects_empty_identity_and_configuration_fields() {
     let mut descriptor = observer();
     descriptor.observer_id = "  ".into();
-    assert_eq!(descriptor.validate(), Err(ObserverValidationError::EmptyObserverId));
+    assert_eq!(
+        descriptor.validate(),
+        Err(ObserverValidationError::EmptyObserverId)
+    );
 
     let mut method = procedure();
     method.configuration_ref.clear();
-    assert_eq!(method.validate(), Err(ObserverValidationError::EmptyConfigurationRef));
+    assert_eq!(
+        method.validate(),
+        Err(ObserverValidationError::EmptyConfigurationRef)
+    );
 
     let mut observation = record();
     observation.target_ref.clear();
-    assert_eq!(observation.validate(), Err(ObserverValidationError::EmptyTargetRef));
+    assert_eq!(
+        observation.validate(),
+        Err(ObserverValidationError::EmptyTargetRef)
+    );
 }
 
 #[test]
@@ -144,5 +161,6 @@ fn unknown_interaction_and_observer_position_are_explicit_values() {
     method.position = ObserverPosition::Unknown;
     method.interaction = InteractionMode::Unknown;
     method.coordination = ObservationCoordination::Unknown;
+
     assert_eq!(method.validate(), Ok(()));
 }
