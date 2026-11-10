@@ -288,6 +288,14 @@ impl FileRecoveryStorage {
                 Err(error) => return Err(error.into()),
             }
 
+            // Reserve the temporary CURRENT name before publishing the generation.
+            // A stale name collision must not leave a newly published orphan generation.
+            let mut current_file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&current_temp)?;
+            current_temp_created = true;
+
             fs::rename(&stage_dir, &final_dir)?;
             stage_created = false;
             hook(CommitStage::GenerationPublished)?;
@@ -298,14 +306,6 @@ impl FileRecoveryStorage {
                 generation,
                 manifest_digest: Sha256::digest(&manifest_bytes).into(),
             };
-
-            // Track successful exclusive creation separately from write/sync:
-            // a pre-existing path must never be removed by this operation.
-            let mut current_file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&current_temp)?;
-            current_temp_created = true;
             current_file.write_all(&pointer.encode())?;
             current_file.sync_all()?;
             hook(CommitStage::CurrentSynced)?;
@@ -780,7 +780,7 @@ mod tests {
             .publish_with_token(package(1), token, |_| Ok(()))
             .is_err());
         assert_eq!(fs::read(&current_temp).unwrap(), b"previous-process");
-        assert!(storage.generation_dir(1).join("manifest.bin").exists());
+        assert!(!storage.generation_dir(1).exists());
         assert!(!directory
             .path()
             .join(format!(
