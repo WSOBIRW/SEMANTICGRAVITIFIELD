@@ -164,3 +164,50 @@ fn unknown_interaction_and_observer_position_are_explicit_values() {
 
     assert_eq!(method.validate(), Ok(()));
 }
+
+#[test]
+fn binds_observation_to_exact_observer_and_procedure_versions() {
+    let observation = record();
+    assert_eq!(
+        observation.validate_against(&observer(), &procedure()),
+        Ok(())
+    );
+}
+
+#[test]
+fn rejects_observer_identity_or_version_mismatch() {
+    let observation = record();
+
+    let mut wrong_identity = observer();
+    wrong_identity.observer_id = "observer-b".into();
+    assert_eq!(
+        observation.validate_against(&wrong_identity, &procedure()),
+        Err(ObserverValidationError::ObserverIdentityMismatch)
+    );
+
+    let mut wrong_version = observer();
+    wrong_version.version = 3;
+    assert_eq!(
+        observation.validate_against(&wrong_version, &procedure()),
+        Err(ObserverValidationError::ObserverVersionMismatch)
+    );
+}
+
+#[test]
+fn rejects_procedure_identity_or_version_mismatch() {
+    let observation = record();
+
+    let mut wrong_identity = procedure();
+    wrong_identity.procedure_id = "procedure-b".into();
+    assert_eq!(
+        observation.validate_against(&observer(), &wrong_identity),
+        Err(ObserverValidationError::ProcedureIdentityMismatch)
+    );
+
+    let mut wrong_version = procedure();
+    wrong_version.version = 2;
+    assert_eq!(
+        observation.validate_against(&observer(), &wrong_version),
+        Err(ObserverValidationError::ProcedureVersionMismatch)
+    );
+}
