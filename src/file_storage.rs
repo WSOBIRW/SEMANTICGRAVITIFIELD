@@ -585,6 +585,19 @@ mod tests {
     }
 
     #[test]
+    fn oversized_current_pointer_is_rejected_after_bounded_read() {
+        let directory = TestDirectory::new();
+        let storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        fs::write(directory.path().join("CURRENT"), vec![0_u8; CURRENT_LEN + 1024 * 1024])
+            .unwrap();
+
+        assert!(matches!(
+            storage.load_current(),
+            Err(FileRecoveryStorageError::InvalidCurrent)
+        ));
+    }
+
+    #[test]
     fn corrupt_current_pointer_fails_closed() {
         let directory = TestDirectory::new();
         let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
@@ -639,7 +652,7 @@ mod tests {
 
             if matches!(
                 fail_stage,
-                CommitStage::GenerationPublished | CommitStage::GenerationsDirectorySynced
+                CommitStage::GenerationPublished | CommitStage::GenerationsDirectorySynced | CommitStage::CurrentSynced
             ) {
                 // Preserve a complete but unpublished successor; fail closed.
                 assert!(storage.commit_generation(Some(1), package(2)).is_err());
