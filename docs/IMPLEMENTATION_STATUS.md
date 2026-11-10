@@ -54,11 +54,11 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/file-generation-recovery-storage`.
-- Проверенный HEAD: `af2029b25ea0e26202d4b4aa30c7ffd801aaf291`.
-- CI: GitHub Actions run #211, SUCCESS на указанном HEAD: rustfmt PASS, Clippy PASS, тесты PASS.
-- Независимый Codex code review на этом HEAD: RUNNING на момент последней проверки.
-- Отдельный завершённый security review на этом HEAD не подтверждён.
-- Все 8 существующих inline review threads помечены resolved; 7 из них относятся к устаревшим строкам/ревизиям. Разрешение thread не является независимым доказательством безопасности.
+- Последний кодовый HEAD до интеграционной синхронизации: `af2029b25ea0e26202d4b4aa30c7ffd801aaf291`.
+- Интеграционный HEAD: `20b1dafb598936bff8db551ba591e0323f7d49c6`; первый родитель — актуальный на момент синхронизации main `ad7187c9a5ad7f8d116356500d8d624aa5a0c21f`, второй — кодовый HEAD PR.
+- CI: GitHub Actions run #211 на кодовом HEAD и run #212 на интеграционном HEAD завершились SUCCESS: rustfmt PASS, Clippy PASS, тесты PASS.
+- Независимый Codex code review на кодовом HEAD `af2029b` оставался RUNNING при последней проверке; новый запрос code + security review на интеграционный HEAD `20b1daf` отправлен, завершённый результат пока не подтверждён.
+- Все 8 существующих inline review threads помечены resolved; 7 относятся к устаревшим строкам/ревизиям. Разрешение thread не является независимым доказательством безопасности.
 - PR не сливался.
 
 Реализовано в ветке PR:
