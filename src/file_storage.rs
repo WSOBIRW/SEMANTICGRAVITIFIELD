@@ -921,6 +921,24 @@ mod tests {
     }
 
     #[test]
+    fn bounded_reader_enforces_remaining_aggregate_budget_after_file_growth() {
+        let directory = TestDirectory::new();
+        let path = directory.path().join("growing.bin");
+        fs::write(&path, vec![7_u8; 128]).unwrap();
+        let file = File::open(&path).unwrap();
+
+        let error = read_bounded_artifact(file, "aggregate", 0, 64).unwrap_err();
+        assert!(matches!(
+            error,
+            FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                artifact: "aggregate",
+                size: 65,
+                limit: 64
+            }
+        ));
+    }
+
+    #[test]
     fn corrupt_current_pointer_fails_closed() {
         let directory = TestDirectory::new();
         let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
