@@ -301,11 +301,12 @@ impl FileRecoveryStorage {
             .read_limits
             .max_snapshot_bytes
             .min(self.read_limits.max_total_bytes);
-        let snapshot_error_artifact = if snapshot_limit < self.read_limits.max_snapshot_bytes {
-            "aggregate"
-        } else {
-            "snapshot"
-        };
+        let snapshot_error_artifact =
+            if snapshot_limit < self.read_limits.max_snapshot_bytes {
+                "aggregate"
+            } else {
+                "snapshot"
+            };
         let snapshot = read_bounded_artifact(
             snapshot_file,
             snapshot_error_artifact,
@@ -319,11 +320,12 @@ impl FileRecoveryStorage {
             .checked_sub(snapshot.len() as u64)
             .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
         let journal_limit = self.read_limits.max_journal_bytes.min(after_snapshot);
-        let journal_error_artifact = if journal_limit < self.read_limits.max_journal_bytes {
-            "aggregate"
-        } else {
-            "journal"
-        };
+        let journal_error_artifact =
+            if journal_limit < self.read_limits.max_journal_bytes {
+                "aggregate"
+            } else {
+                "journal"
+            };
         let journal = read_bounded_artifact(
             journal_file,
             journal_error_artifact,
@@ -335,11 +337,12 @@ impl FileRecoveryStorage {
             .checked_sub(journal.len() as u64)
             .ok_or(FileRecoveryStorageError::ArtifactSizeOverflow)?;
         let manifest_limit = self.read_limits.max_manifest_bytes.min(after_journal);
-        let manifest_error_artifact = if manifest_limit < self.read_limits.max_manifest_bytes {
-            "aggregate"
-        } else {
-            "manifest"
-        };
+        let manifest_error_artifact =
+            if manifest_limit < self.read_limits.max_manifest_bytes {
+                "aggregate"
+            } else {
+                "manifest"
+            };
         let manifest_bytes = read_bounded_artifact(
             manifest_file,
             manifest_error_artifact,
