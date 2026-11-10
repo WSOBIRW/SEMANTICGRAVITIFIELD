@@ -14,7 +14,7 @@ pub mod validation;
 
 pub use event::{EventPayload, MarketEvent, Quote};
 #[cfg(unix)]
-pub use file_storage::{FileRecoveryStorage, FileRecoveryStorageError};
+pub use file_storage::{ArtifactReadLimits, FileRecoveryStorage, FileRecoveryStorageError};
 pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
