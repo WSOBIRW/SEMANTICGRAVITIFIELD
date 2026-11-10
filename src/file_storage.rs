@@ -53,7 +53,10 @@ pub enum FileRecoveryStorageError {
     InvalidLockFile,
     InvalidGenerationDirectory,
     UnreferencedGenerationExists,
-    ManifestGenerationMismatch { pointer: u64, manifest: u64 },
+    ManifestGenerationMismatch {
+        pointer: u64,
+        manifest: u64,
+    },
     ManifestDigestMismatch,
     InvalidRecoveryArtifact(&'static str),
     ArtifactReadLimitExceeded {
@@ -85,7 +88,11 @@ impl std::fmt::Display for FileRecoveryStorageError {
             Self::InvalidRecoveryArtifact(name) => {
                 write!(f, "recovery artifact is not a regular file: {name}")
             }
-            Self::ArtifactReadLimitExceeded { artifact, size, limit } => write!(
+            Self::ArtifactReadLimitExceeded {
+                artifact,
+                size,
+                limit,
+            } => write!(
                 f,
                 "recovery artifact {artifact} size {size} exceeds configured read limit {limit}"
             ),
@@ -184,10 +191,7 @@ impl FileRecoveryStorage {
         Self::open_with_limits_and_hook(root, read_limits, |_| Ok(()))
     }
 
-    fn open_with_hook<F>(
-        root: impl AsRef<Path>,
-        hook: F,
-    ) -> Result<Self, FileRecoveryStorageError>
+    fn open_with_hook<F>(root: impl AsRef<Path>, hook: F) -> Result<Self, FileRecoveryStorageError>
     where
         F: FnMut(CommitStage) -> io::Result<()>,
     {
@@ -271,9 +275,17 @@ impl FileRecoveryStorage {
         let (journal_file, journal_size) = open_recovery_artifact(&journal_path, "journal")?;
         let (manifest_file, manifest_size) = open_recovery_artifact(&manifest_path, "manifest")?;
 
-        check_artifact_limit("snapshot", snapshot_size, self.read_limits.max_snapshot_bytes)?;
+        check_artifact_limit(
+            "snapshot",
+            snapshot_size,
+            self.read_limits.max_snapshot_bytes,
+        )?;
         check_artifact_limit("journal", journal_size, self.read_limits.max_journal_bytes)?;
-        check_artifact_limit("manifest", manifest_size, self.read_limits.max_manifest_bytes)?;
+        check_artifact_limit(
+            "manifest",
+            manifest_size,
+            self.read_limits.max_manifest_bytes,
+        )?;
 
         let total_size = snapshot_size
             .checked_add(journal_size)
