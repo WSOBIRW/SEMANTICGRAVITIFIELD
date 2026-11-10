@@ -12,12 +12,12 @@ pub mod snapshot;
 pub mod validation;
 
 pub use event::{EventPayload, MarketEvent, Quote};
+pub use journal::{
+    encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
+};
 pub use observer::{
     InteractionMode, ObservationCoordination, ObservationProcedure, ObservationRecord,
     ObserverDescriptor, ObserverPosition, ObserverValidationError,
-};
-pub use journal::{
-    encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
 pub use recovery::{
