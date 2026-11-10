@@ -4,6 +4,8 @@
 //! Он намеренно не выводит истинность наблюдения, независимость наблюдателей
 //! или причинное влияние измерения на исследуемую систему.
 
+use sha2::{Digest, Sha256};
+
 /// Описание наблюдателя и его явно объявленных ограничений.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObserverDescriptor {
@@ -69,6 +71,10 @@ pub struct ObservationRecord {
     pub observer_version: u32,
     pub procedure_id: String,
     pub procedure_version: u32,
+    /// Digest полного определения наблюдателя, а не только его ID/version.
+    pub observer_definition_digest: [u8; 32],
+    /// Digest полного определения процедуры, а не только её ID/version.
+    pub procedure_definition_digest: [u8; 32],
     pub target_ref: String,
     /// Время начала в Unix milliseconds UTC.
     pub started_at_ms: i64,
@@ -104,9 +110,27 @@ pub enum ObserverValidationError {
     ObserverVersionMismatch,
     ProcedureIdentityMismatch,
     ProcedureVersionMismatch,
+    ObserverDefinitionDigestMismatch,
+    ProcedureDefinitionDigestMismatch,
 }
 
 impl ObserverDescriptor {
+    /// Канонический digest полного определения наблюдателя версии 1.
+    ///
+    /// Digest связывает запись с точным содержимым переданного определения,
+    /// но не является подписью и не доказывает происхождение descriptor.
+    pub fn definition_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"SGF:OBSERVER_DESCRIPTOR:V1\0");
+        update_string(&mut hasher, &self.observer_id);
+        update_string(&mut hasher, &self.observer_type);
+        hasher.update(self.version.to_le_bytes());
+        update_string_list(&mut hasher, &self.capability_codes);
+        update_string_list(&mut hasher, &self.limitation_codes);
+        update_string_list(&mut hasher, &self.dependency_refs);
+        hasher.finalize().into()
+    }
+
     /// Неизвестные коды типов допустимы и не интерпретируются модулем.
     pub fn validate(&self) -> Result<(), ObserverValidationError> {
         require_non_empty(&self.observer_id, ObserverValidationError::EmptyObserverId)?;
@@ -137,6 +161,26 @@ impl ObserverDescriptor {
 }
 
 impl ObservationProcedure {
+    /// Канонический digest полного определения процедуры версии 1.
+    ///
+    /// Digest связывает запись с точным содержимым переданного определения,
+    /// но сам по себе не подтверждает подлинность источника или неизменяемость
+    /// внешнего хранилища. Для доверенной идентичности нужен доверенный реестр
+    /// либо подпись/доверенный digest вне контроля вызывающей стороны.
+    pub fn definition_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"SGF:OBSERVATION_PROCEDURE:V1\0");
+        update_string(&mut hasher, &self.procedure_id);
+        update_string(&mut hasher, &self.procedure_type);
+        hasher.update(self.version.to_le_bytes());
+        hasher.update([position_code(self.position)]);
+        hasher.update([interaction_code(self.interaction)]);
+        hasher.update([coordination_code(self.coordination)]);
+        update_string(&mut hasher, &self.channel_code);
+        update_string(&mut hasher, &self.configuration_ref);
+        hasher.finalize().into()
+    }
+
     pub fn validate(&self) -> Result<(), ObserverValidationError> {
         require_non_empty(
             &self.procedure_id,
@@ -181,11 +225,17 @@ impl ObservationRecord {
         if self.observer_version != observer.version {
             return Err(ObserverValidationError::ObserverVersionMismatch);
         }
+        if self.observer_definition_digest != observer.definition_digest() {
+            return Err(ObserverValidationError::ObserverDefinitionDigestMismatch);
+        }
         if self.procedure_id != procedure.procedure_id {
             return Err(ObserverValidationError::ProcedureIdentityMismatch);
         }
         if self.procedure_version != procedure.version {
             return Err(ObserverValidationError::ProcedureVersionMismatch);
+        }
+        if self.procedure_definition_digest != procedure.definition_digest() {
+            return Err(ObserverValidationError::ProcedureDefinitionDigestMismatch);
         }
 
         Ok(())
@@ -228,6 +278,44 @@ impl ObservationRecord {
         )?;
 
         Ok(())
+    }
+}
+
+
+fn update_string(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
+fn update_string_list(hasher: &mut Sha256, values: &[String]) {
+    hasher.update((values.len() as u64).to_le_bytes());
+    for value in values {
+        update_string(hasher, value);
+    }
+}
+
+fn position_code(value: ObserverPosition) -> u8 {
+    match value {
+        ObserverPosition::External => 0,
+        ObserverPosition::Internal => 1,
+        ObserverPosition::Unknown => 2,
+    }
+}
+
+fn interaction_code(value: InteractionMode) -> u8 {
+    match value {
+        InteractionMode::Passive => 0,
+        InteractionMode::Active => 1,
+        InteractionMode::Unknown => 2,
+    }
+}
+
+fn coordination_code(value: ObservationCoordination) -> u8 {
+    match value {
+        ObservationCoordination::Individual => 0,
+        ObservationCoordination::Collective => 1,
+        ObservationCoordination::Distributed => 2,
+        ObservationCoordination::Unknown => 3,
     }
 }
 
