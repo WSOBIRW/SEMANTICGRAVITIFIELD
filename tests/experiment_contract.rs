@@ -155,3 +155,16 @@ fn accepts_the_largest_supported_noise_bound_within_i64_domain() {
     assert!(delta >= -i128::from(i64::MAX));
     assert!(delta <= i128::from(i64::MAX));
 }
+
+#[test]
+fn observation_preserves_state_order_not_access_list_order() {
+    let mut reversed = observer();
+    reversed.visible_keys = vec!["beta".into(), "alpha".into()];
+
+    let view = observe(&state(), &reversed).unwrap();
+
+    assert_eq!(
+        view.visible_variables.iter().map(|item| item.key.as_str()).collect::<Vec<_>>(),
+        vec!["alpha", "beta"]
+    );
+}
