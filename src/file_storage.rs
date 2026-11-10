@@ -363,27 +363,44 @@ enum CommitStage {
 }
 
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
+    // Resolve and sync every ancestor, not only components created by this call.
+    // A concurrent opener may observe a directory after create_dir but before
+    // the creating process syncs its parent. Re-syncing existing components
+    // closes that durability window before this opener can publish CURRENT.
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty());
+
+    if let Some(parent) = parent {
+        if parent != path {
+            create_dir_all_synced(parent)?;
+        }
+    }
+
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
-            if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
-                return Ok(());
+            if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
             }
-            return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir(path).or_else(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })?;
+            ensure_real_directory(path)?;
+        }
         Err(error) => return Err(error.into()),
     }
 
-    let parent = path
-        .parent()
-        .filter(|value| !value.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    create_dir_all_synced(parent)?;
-
-    match fs::create_dir(path) {
-        Ok(()) => sync_directory(parent)?,
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => ensure_real_directory(path)?,
-        Err(error) => return Err(error.into()),
+    // For relative single-component paths the parent is ".", which is the
+    // correct directory whose entry must be made durable.
+    let sync_parent = parent.unwrap_or(Path::new("."));
+    if sync_parent != path {
+        sync_directory(sync_parent)?;
     }
     Ok(())
 }
