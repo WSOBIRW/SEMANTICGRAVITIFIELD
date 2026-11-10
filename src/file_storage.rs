@@ -233,6 +233,19 @@ impl FileRecoveryStorage {
     fn publish_with_hook<F>(
         &self,
         package: RecoveryPackage,
+        hook: F,
+    ) -> Result<(), FileRecoveryStorageError>
+    where
+        F: FnMut(CommitStage) -> io::Result<()>,
+    {
+        let token = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        self.publish_with_token(package, token, hook)
+    }
+
+    fn publish_with_token<F>(
+        &self,
+        package: RecoveryPackage,
+        token: u64,
         mut hook: F,
     ) -> Result<(), FileRecoveryStorageError>
     where
@@ -240,7 +253,6 @@ impl FileRecoveryStorage {
     {
         let generation = package.manifest.generation;
         let generations_dir = self.root.join("generations");
-        let token = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         // Keep the unique staging directory as a direct child of the validated root.
         let stage_dir = self.root.join(format!(
             ".staging-g-{generation:020}-p{}-{token}",
@@ -250,9 +262,13 @@ impl FileRecoveryStorage {
         let current_temp = self
             .root
             .join(format!(".CURRENT-p{}-{token}", std::process::id()));
+        let mut stage_created = false;
+        let mut current_temp_created = false;
 
         let result = (|| {
+            // Cleanup below is permitted only after this operation created the path.
             fs::create_dir(&stage_dir)?;
+            stage_created = true;
             hook(CommitStage::StagingCreated)?;
             write_new_sync(&stage_dir.join("snapshot.bin"), &package.snapshot)?;
             hook(CommitStage::SnapshotSynced)?;
@@ -282,7 +298,15 @@ impl FileRecoveryStorage {
                 manifest_digest: Sha256::digest(&manifest_bytes).into(),
             };
 
-            write_new_sync(&current_temp, &pointer.encode())?;
+            // Track successful exclusive creation separately from write/sync:
+            // a pre-existing path must never be removed by this operation.
+            let mut current_file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&current_temp)?;
+            current_temp_created = true;
+            current_file.write_all(&pointer.encode())?;
+            current_file.sync_all()?;
             hook(CommitStage::CurrentSynced)?;
             fs::rename(&current_temp, self.root.join("CURRENT"))?;
             hook(CommitStage::CurrentPublished)?;
@@ -292,8 +316,12 @@ impl FileRecoveryStorage {
         })();
 
         if result.is_err() {
-            let _ = fs::remove_dir_all(&stage_dir);
-            let _ = fs::remove_file(&current_temp);
+            if stage_created {
+                let _ = fs::remove_dir_all(&stage_dir);
+            }
+            if current_temp_created {
+                let _ = fs::remove_file(&current_temp);
+            }
         }
         result
     }
@@ -712,6 +740,53 @@ mod tests {
             .join("g-00000000000000000001")
             .join("manifest.bin")
             .exists());
+    }
+
+    #[test]
+    fn preexisting_staging_collision_is_not_removed() {
+        let directory = TestDirectory::new();
+        let storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        let token = u64::MAX;
+        let stage_dir = directory.path().join(format!(
+            ".staging-g-{:020}-p{}-{token}",
+            1,
+            std::process::id()
+        ));
+        fs::create_dir(&stage_dir).unwrap();
+        fs::write(stage_dir.join("preserve.bin"), b"previous-process").unwrap();
+
+        assert!(storage
+            .publish_with_token(package(1), token, |_| Ok(()))
+            .is_err());
+        assert_eq!(
+            fs::read(stage_dir.join("preserve.bin")).unwrap(),
+            b"previous-process"
+        );
+    }
+
+    #[test]
+    fn preexisting_current_temp_collision_is_not_removed() {
+        let directory = TestDirectory::new();
+        let storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        let token = u64::MAX - 1;
+        let current_temp = directory
+            .path()
+            .join(format!(".CURRENT-p{}-{token}", std::process::id()));
+        fs::write(&current_temp, b"previous-process").unwrap();
+
+        assert!(storage
+            .publish_with_token(package(1), token, |_| Ok(()))
+            .is_err());
+        assert_eq!(
+            fs::read(&current_temp).unwrap(),
+            b"previous-process"
+        );
+        assert!(storage.generation_dir(1).join("manifest.bin").exists());
+        assert!(!directory.path().join(format!(
+            ".staging-g-{:020}-p{}-{token}",
+            1,
+            std::process::id()
+        )).exists());
     }
 
     #[cfg(unix)]
