@@ -367,9 +367,7 @@ fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
     // A concurrent opener may observe a directory after create_dir but before
     // the creating process syncs its parent. Re-syncing existing components
     // closes that durability window before this opener can publish CURRENT.
-    let parent = path
-        .parent()
-        .filter(|value| !value.as_os_str().is_empty());
+    let parent = path.parent().filter(|value| !value.as_os_str().is_empty());
 
     if let Some(parent) = parent {
         if parent != path {
