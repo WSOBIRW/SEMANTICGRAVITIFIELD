@@ -207,7 +207,7 @@ impl FileRecoveryStorage {
     where
         F: FnMut(CommitStage) -> io::Result<()>,
     {
-        let root = normalize_storage_root(root.as_ref());
+        let root = anchor_storage_root(root.as_ref())?;
         create_dir_all_synced(&root)?;
         ensure_real_directory(&root)?;
         create_dir_all_synced(&root.join("generations"))?;
@@ -579,7 +579,35 @@ fn open_recovery_artifact(
     path: &Path,
     name: &'static str,
 ) -> Result<(File, u64), FileRecoveryStorageError> {
-    let file = File::open(path)?;
+    // Reject known invalid entries before opening. On Unix, O_NOFOLLOW and
+    // O_NONBLOCK close the symlink/FIFO race between metadata and open:
+    // a replaced symlink fails, while a FIFO cannot block waiting for a writer.
+    let entry = fs::symlink_metadata(path)?;
+    if !entry.file_type().is_file() || entry.file_type().is_symlink() {
+        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
+    }
+
+    #[cfg(unix)]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+            .map_err(|error| {
+                if error.kind() == io::ErrorKind::NotFound
+                    || error.raw_os_error() == Some(libc::ELOOP)
+                {
+                    FileRecoveryStorageError::InvalidRecoveryArtifact(name)
+                } else {
+                    FileRecoveryStorageError::Io(error)
+                }
+            })?
+    };
+
+    #[cfg(not(unix))]
+    let file = OpenOptions::new().read(true).open(path)?;
+
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
@@ -662,6 +690,15 @@ fn read_bounded_artifact(
     }
 
     Ok(bytes)
+}
+
+fn anchor_storage_root(path: &Path) -> Result<PathBuf, FileRecoveryStorageError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    Ok(normalize_storage_root(&absolute))
 }
 
 #[cfg(target_os = "macos")]
@@ -824,6 +861,53 @@ mod tests {
             journal,
             manifest,
         }
+    }
+
+    #[test]
+    fn relative_storage_root_is_anchored_to_open_time_directory() {
+        let directory = TestDirectory::new();
+        let relative = Path::new("relative-sgf-store");
+        let absolute = directory.path().join(relative);
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(directory.path()).unwrap();
+        let anchored = anchor_storage_root(relative).unwrap();
+        std::env::set_current_dir(previous).unwrap();
+        assert_eq!(anchored, absolute);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_artifact_fifo_is_rejected_without_waiting_for_writer() {
+        use std::process::Command;
+
+        let directory = TestDirectory::new();
+        let fifo = directory.path().join("artifact.fifo");
+        let status = Command::new("mkfifo").arg(&fifo).status().unwrap();
+        assert!(status.success());
+
+        let result = open_recovery_artifact(&fifo, "snapshot");
+        assert!(matches!(
+            result,
+            Err(FileRecoveryStorageError::InvalidRecoveryArtifact("snapshot"))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_artifact_symlink_is_rejected_without_following_target() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        let target = directory.path().join("target.bin");
+        let link = directory.path().join("link.bin");
+        fs::write(&target, b"protected").unwrap();
+        symlink(&target, &link).unwrap();
+
+        assert!(matches!(
+            open_recovery_artifact(&link, "journal"),
+            Err(FileRecoveryStorageError::InvalidRecoveryArtifact("journal"))
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"protected");
     }
 
     #[cfg(target_os = "macos")]
