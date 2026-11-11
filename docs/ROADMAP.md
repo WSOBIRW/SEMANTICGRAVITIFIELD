@@ -34,7 +34,7 @@
 ## Этап 3. Долговечное восстановление — в работе
 - [x] Контракт CAS поколений и строгий successor (PR #10).
 - [x] Первый Unix file-generation backend реализован в PR #14, но не принят в main; PR #11 закрыт как superseded.
-- [ ] Закрыть актуальные Code Review findings PR #14 на текущем HEAD; P2 по отсутствию RustSec advisory scan исправлен добавлением cargo-audit 0.22.2, CI run #317 выполняется.
+- [ ] Закрыть актуальные Code Review findings PR #14 на текущем HEAD; P2 по RustSec advisory scan исправлен и проверен в CI #321. Новый P2 по stale staging/CURRENT temp исправлен в HEAD `11578bc`; CI #339 выполняется, повторный Code Review ожидается.
 - [ ] Получить отдельный Security Review PR #14 на точном актуальном HEAD.
 - [ ] Провести независимое ревью файловых операций, symlink/TOCTOU, CURRENT parsing, orphan handling и конкурентных writers.
 - [ ] Проверить crash consistency на заявленной ОС/ФС; отдельно обозначить пределы тестов процесса и физической потери питания.
