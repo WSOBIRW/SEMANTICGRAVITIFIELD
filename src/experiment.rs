@@ -442,7 +442,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn observation_limits_reject_large_visible_key_list() {
         let state = SyntheticState {
