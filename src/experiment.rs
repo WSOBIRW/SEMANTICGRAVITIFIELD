@@ -152,11 +152,7 @@ pub fn observe(
         .iter()
         .map(|variable| variable.key.as_str())
         .collect();
-    let visible_keys: BTreeSet<&str> = observer
-        .visible_keys
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let visible_keys: BTreeSet<&str> = observer.visible_keys.iter().map(String::as_str).collect();
 
     if visible_keys.iter().any(|key| !state_keys.contains(key)) {
         return Err(ExperimentError::UnknownVisibleKey);
@@ -180,11 +176,7 @@ pub fn observe(
 
         let resolution = i128::from(observer.resolution);
         let quantized = i128::from(variable.value).div_euclid(resolution) * resolution;
-        let noise = deterministic_noise(
-            shared_noise_prefix,
-            &variable.key,
-            observer.noise_bound,
-        );
+        let noise = deterministic_noise(shared_noise_prefix, &variable.key, observer.noise_bound);
         let measured = quantized + noise;
 
         let value = i64::try_from(measured).map_err(|_| ExperimentError::ArithmeticOverflow)?;
