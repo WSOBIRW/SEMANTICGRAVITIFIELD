@@ -5,7 +5,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest, Sha256};
@@ -778,7 +778,26 @@ fn anchor_storage_root(path: &Path) -> Result<PathBuf, FileRecoveryStorageError>
     } else {
         std::env::current_dir()?.join(path)
     };
-    Ok(normalize_storage_root(&absolute))
+    let normalized = normalize_absolute_path(&absolute);
+    Ok(normalize_storage_root(&normalized))
+}
+
+fn normalize_absolute_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if normalized.file_name().is_some() {
+                    normalized.pop();
+                }
+            }
+            Component::Normal(value) => normalized.push(value),
+        }
+    }
+    normalized
 }
 
 #[cfg(target_os = "macos")]
@@ -1516,6 +1535,19 @@ mod tests {
             storage.load_current().unwrap().unwrap().manifest.generation,
             1
         );
+    }
+
+
+    #[test]
+    fn rejects_lexical_aliases_of_filesystem_root() {
+        assert!(matches!(
+            FileRecoveryStorage::open(Path::new("/./")),
+            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+        ));
+        assert!(matches!(
+            FileRecoveryStorage::open(Path::new("/tmp/..")),
+            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+        ));
     }
 
     #[test]
