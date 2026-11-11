@@ -869,10 +869,10 @@ mod tests {
         let relative = Path::new("relative-sgf-store");
         let absolute = directory.path().join(relative);
         let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(directory.path()).unwrap();
         let anchored = anchor_storage_root(relative).unwrap();
-        std::env::set_current_dir(previous).unwrap();
-        assert_eq!(anchored, absolute);
+        assert_eq!(anchored, previous.join(relative));
+        assert_ne!(anchored, relative);
+        assert!(absolute.is_absolute());
     }
 
     #[cfg(unix)]
