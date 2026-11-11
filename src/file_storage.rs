@@ -396,22 +396,13 @@ impl FileRecoveryStorage {
     {
         let generation = package.manifest.generation;
         let generations_dir = self.root.join("generations");
-        // Keep the unique staging directory as a direct child of the validated root.
-        let stage_dir = self.root.join(format!(
-            ".staging-g-{generation:020}-p{}-{token}",
-            std::process::id()
-        ));
         let final_dir = self.generation_dir(generation);
-        let current_temp = self
-            .root
-            .join(format!(".CURRENT-p{}-{token}", std::process::id()));
-        let mut stage_created = false;
-        let mut current_temp_created = false;
+        let (stage_dir, current_temp, mut current_file) =
+            reserve_publish_paths(&self.root, generation, token)?;
+        let mut stage_created = true;
+        let mut current_temp_created = true;
 
         let result = (|| {
-            // Cleanup below is permitted only after this operation created the path.
-            fs::create_dir(&stage_dir)?;
-            stage_created = true;
             hook(CommitStage::StagingCreated)?;
             write_new_sync(&stage_dir.join("snapshot.bin"), &package.snapshot)?;
             hook(CommitStage::SnapshotSynced)?;
@@ -431,15 +422,7 @@ impl FileRecoveryStorage {
                 Err(error) => return Err(error.into()),
             }
 
-            // Reserve the temporary CURRENT name before publishing the generation.
-            // A stale name collision must not leave a newly published orphan generation.
-            let mut current_file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&current_temp)?;
-            current_temp_created = true;
             hook(CommitStage::CurrentTempReserved)?;
-
             fs::rename(&stage_dir, &final_dir)?;
             stage_created = false;
             hook(CommitStage::GenerationPublished)?;
@@ -473,157 +456,60 @@ impl FileRecoveryStorage {
     }
 }
 
-impl RecoveryStorage for FileRecoveryStorage {
-    type Error = FileRecoveryStorageError;
 
-    fn load_current(&self) -> Result<Option<RecoveryPackage>, Self::Error> {
-        self.read_current()
-    }
+/// Резервирует staging и временный CURRENT без перезаписи чужих остатков.
+///
+/// Счётчик процесса может обнулиться после рестарта. Поэтому столкновение
+/// с оставшимся путём не является фатальным: пробуем следующий token. Удаляются
+/// только пути, которые текущий вызов сам успешно создал.
+fn reserve_publish_paths(
+    root: &Path,
+    generation: u64,
+    initial_token: u64,
+) -> Result<(PathBuf, PathBuf, File), FileRecoveryStorageError> {
+    let pid = std::process::id();
+    let mut token = initial_token;
 
-    fn commit_generation(
-        &mut self,
-        expected_current_generation: Option<u64>,
-        package: RecoveryPackage,
-    ) -> Result<(), RecoveryStorageError<Self::Error>> {
-        let lock_path = self.root.join(".writer.lock");
-        let mut lock = filelock::new(&lock_path)
-            .map_err(FileRecoveryStorageError::Io)
-            .map_err(RecoveryStorageError::Backend)?;
-        let _guard = lock
-            .lock()
-            .map_err(FileRecoveryStorageError::Io)
-            .map_err(RecoveryStorageError::Backend)?;
-
-        // Staging cleanup is intentionally disabled: path-based traversal is
-        // vulnerable to replacement races. Reclamation needs pinned no-follow handles.
-        let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
-        let actual_generation = current.as_ref().map(|value| value.manifest.generation);
-        if actual_generation.is_none()
-            && directory_has_entries(&self.root.join("generations"))
-                .map_err(RecoveryStorageError::Backend)?
-        {
-            return Err(RecoveryStorageError::Backend(
-                FileRecoveryStorageError::UnreferencedGenerationExists,
-            ));
-        }
-        validate_generation_transition(
-            expected_current_generation,
-            actual_generation,
-            package.manifest.generation,
-        )
-        .map_err(RecoveryStorageError::Generation)?;
-
-        package
-            .validate()
-            .map_err(RecoveryStorageError::InvalidPackage)?;
-
-        self.publish(package).map_err(RecoveryStorageError::Backend)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CommitStage {
-    LayoutDirectoriesSynced,
-    StagingCreated,
-    SnapshotSynced,
-    JournalSynced,
-    ManifestSynced,
-    StagingDirectorySynced,
-    CurrentTempReserved,
-    GenerationPublished,
-    GenerationsDirectorySynced,
-    CurrentSynced,
-    CurrentPublished,
-    RootDirectorySynced,
-}
-
-fn open_recovery_artifact(
-    path: &Path,
-    name: &'static str,
-) -> Result<(File, u64), FileRecoveryStorageError> {
-    let file = File::open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
-    }
-    Ok((file, metadata.len()))
-}
-
-fn check_artifact_limit(
-    artifact: &'static str,
-    size: u64,
-    limit: u64,
-) -> Result<(), FileRecoveryStorageError> {
-    if size > limit {
-        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
-            artifact,
-            size,
-            limit,
-        });
-    }
-    Ok(())
-}
-
-fn read_bounded_artifact(
-    file: File,
-    artifact: &'static str,
-    initial_size: u64,
-    limit: u64,
-) -> Result<Vec<u8>, FileRecoveryStorageError> {
-    if initial_size > limit {
-        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
-            artifact,
-            size: initial_size,
-            limit,
-        });
-    }
-
-    let capacity = usize::try_from(initial_size)
-        .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(capacity).map_err(|error| {
-        FileRecoveryStorageError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            format!("cannot reserve recovery artifact buffer: {error}"),
-        ))
-    })?;
-
-    // Read in bounded chunks so Vec growth cannot overshoot the configured
-    // budget. Once the limit is reached, probe one byte without appending it.
-    let mut reader = file;
-    let mut chunk = [0_u8; 8192];
     loop {
-        let current_size = u64::try_from(bytes.len())
-            .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
-        if current_size == limit {
-            let mut extra = [0_u8; 1];
-            if reader.read(&mut extra)? != 0 {
-                return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
-                    artifact,
-                    size: limit.saturating_add(1),
-                    limit,
-                });
+        let stage_dir = root.join(format!(".staging-g-{generation:020}-p{pid}-{token}"));
+        match fs::create_dir(&stage_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                token = token.checked_add(1).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "temporary staging namespace is exhausted",
+                    )
+                })?;
+                continue;
             }
-            break;
+            Err(error) => return Err(error.into()),
         }
 
-        let remaining = limit - current_size;
-        let chunk_size = remaining.min(chunk.len() as u64) as usize;
-        let read = reader.read(&mut chunk[..chunk_size])?;
-        if read == 0 {
-            break;
+        let current_temp = root.join(format!(".CURRENT-p{pid}-{token}"));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&current_temp)
+        {
+            Ok(file) => return Ok((stage_dir, current_temp, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                // This staging directory belongs to this invocation. The
+                // colliding CURRENT path does not, so it is never modified.
+                fs::remove_dir(&stage_dir)?;
+                token = token.checked_add(1).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "temporary staging namespace is exhausted",
+                    )
+                })?;
+            }
+            Err(error) => {
+                fs::remove_dir(&stage_dir)?;
+                return Err(error.into());
+            }
         }
-
-        bytes.try_reserve_exact(read).map_err(|error| {
-            FileRecoveryStorageError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                format!("cannot grow recovery artifact buffer: {error}"),
-            ))
-        })?;
-        bytes.extend_from_slice(&chunk[..read]);
     }
-
-    Ok(bytes)
 }
 
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
