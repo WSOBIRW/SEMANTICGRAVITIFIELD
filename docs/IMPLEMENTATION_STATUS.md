@@ -70,8 +70,8 @@
 - Cargo.lock сгенерирован Cargo в успешном run #297; 21 пакет, включая платформенные зависимости Windows, с версиями и checksum. В CI Clippy и тесты теперь используют --locked. Временный экспорт lockfile как artifact удалён.
 - Run #297 на кодовом HEAD `8e734ff`: rustfmt PASS, Clippy PASS, тесты PASS; Cargo.lock artifact получен и добавлен в репозиторий.
 - CI run #314 на предыдущем HEAD `cf290ca`: rustfmt PASS, Clippy PASS, 58 unit tests + 1 integration test PASS (59 всего). Cargo.lock и `--locked` PASS. Source/license gate проверил 21 транзитивный пакет: все источники crates.io; лицензии соответствуют allowlist MIT/Apache-2.0/BSD-3-Clause, включая точную нормализацию legacy `MIT/Apache-2.0`.
-- По P2 finding code review о пропущенной проверке RustSec advisory database добавлен отдельный gate: установка `cargo-audit` версии `0.22.2` с `--locked` и `cargo audit --file Cargo.lock`. CI run #317 на HEAD `0ae25f5` был запущен до последнего изменения workflow. После добавления `feat/**` в push/pull_request filters новый HEAD `82ed264` получил CI run #321: форматирование, Clippy и тесты прошли; установка cargo-audit выполнялась, advisory audit и source/license gate ещё не завершились.
-- P2 finding по отсутствию advisory scan исправлен в коде workflow, но не считается закрытым до успешного CI и повторного review на новом HEAD.
+- По P2 finding code review о пропущенной проверке RustSec advisory database добавлен отдельный gate: установка `cargo-audit` версии `0.22.2` с `--locked` и `cargo audit --file Cargo.lock`. CI run #321 на точном HEAD `82ed2644a76b6cb0393cb8d051b8ab0f444589da`: SUCCESS. rustfmt, Clippy, тесты, установка cargo-audit 0.22.2, RustSec advisory audit и source/license gate прошли. Проверка лицензий/источников охватила 21 транзитивный пакет.
+- P2 finding по отсутствию advisory scan исправлен; ответ опубликован, inline thread разрешён после успешного CI run #321. Новый Code Review на HEAD `82ed264` запрошен, receipt ещё не подтверждён.
 - Реализованы конфигурируемые per-artifact и aggregate бюджеты чтения. Размеры всех файлов и исходная сумма проверяются до выделения буферов; aggregate budget повторно контролируется по фактически прочитанным байтам между последовательными чтениями, чтобы рост нескольких файлов после metadata check не обходил совокупный предел.
 - Добавлены тесты на per-file budget, aggregate budget, рост файла, bounded reader при росте после metadata check и нулевой бюджет.
 - Предыдущий Code Review на HEAD `cf290ca` выявил P2: отсутствовал аудит RustSec. Исправление добавлено в `0ae25f5`; повторный Code Review запрошен на новом HEAD `0ae25f5`; после последующего изменения CI workflow HEAD переместился на `82ed264`, поэтому итоговый review должен быть привязан к этому SHA. Завершённого review на `0ae25f5` пока нет.
@@ -86,9 +86,9 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/controlled-observer-experiment`.
-- Текущий HEAD: `22fe9597df40f714701d59dfe5d21f268f23acea`.
+- Текущий HEAD: `05a3248eac1e3ccb8cdbd81bd72950a5f1eeffbe`.
 - Базовая ветка PR: `feat/observer-foundation`; PR #13 зависит от PR #12 и не направлен непосредственно в main.
-- CI на точном HEAD `22fe959` не обнаружен; PASS не заявляется. Повторный запрос Code Review отправлен на этот SHA, но новый review receipt, подтверждающий просмотр именно этого SHA, пока не зафиксирован.
+- CI run #330 на точном HEAD `05a3248eac1e3ccb8cdbd81bd72950a5f1eeffbe`: SUCCESS; rustfmt и Clippy PASS, 43 unit + 1 integration + 14 experiment contract + 16 observer integration = 74 теста PASS. Повторный Code Review запрошен на точном HEAD `05a3248`; новый review receipt, подтверждающий просмотр именно этого SHA, пока не зафиксирован.
 - Предыдущие P2 исправлены: симметричный диапазон шума ограничен представимым диапазоном; квадратичные проверки заменены BTreeSet; общая часть хеша вычисляется один раз на observation.
 - Предыдущие Code Review findings получили исправления и ответы; inline threads разрешены. Наличие разрешённых старых threads не заменяет повторный review точного HEAD `22fe959`.
 - `visible_keys` определён как фильтр синтетической проекции, а не механизм авторизации; детерминированный шум явно не обеспечивает конфиденциальность или приватность.
@@ -103,7 +103,7 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/observer-foundation`.
-- Текущий HEAD после добавления CI trigger для feature-веток: `886704f6971835809b00bb4065871c29fff5f661` (код observer-модели не менялся в этом commit).
+- Текущий HEAD после добавления CI trigger для feature-веток: `886704f6971835809b00bb4065871c29fff5f661` (код observer-модели не менялся в этом commit). CI run #323 на точном HEAD: SUCCESS; rustfmt, Clippy и тесты прошли.
 - CI run #251 на старом HEAD `530dc07` был SUCCESS (41 unit + 1 integration + 12 observer tests). На текущем HEAD `3eca2ad` CI run #294: rustfmt PASS, Clippy PASS, 41 unit tests + 1 integration test + 16 observer integration tests PASS (58 всего). Промежуточные run #289 и #292 выявили соответственно ошибку тестового предположения о reverse одноэлементного списка и rustfmt-форматирование; оба исправлены до run #294.
 - Добавлены ObserverDescriptor, ObservationProcedure и ObservationRecord.
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
