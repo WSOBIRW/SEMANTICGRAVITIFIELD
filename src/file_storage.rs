@@ -616,7 +616,6 @@ fn read_bounded_artifact(
     Ok(bytes)
 }
 
-
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
     // Resolve and sync every ancestor, not only components created by this call.
     // A concurrent opener may observe a directory after create_dir but before
