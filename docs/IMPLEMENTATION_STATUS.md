@@ -5,12 +5,14 @@
 Этот раздел имеет приоритет над историческими записями ниже. Проверки и review относятся только к указанному SHA.
 
 ### PR #14 — файловое хранилище
-- HEAD: `47631b001d151f997a0f5c48f09cd2555aeb29f0`; PR OPEN, не слит.
-- CI run #385 на точном HEAD завершился SUCCESS: Linux и macOS format/Clippy/tests PASS; Linux cargo-audit 0.22.2, RustSec advisory gate и source/license gate PASS.
-- Code Review receipt на предыдущем SHA `bd35db9` не переносится на текущий HEAD. Повторный Code Review и отдельный security-focused review на `47631b0` запрошены; подтверждённые результаты ещё не получены.
-- Security review выявил P2 по повторному открытию lock path, замене staging-каталога и широким правам файлов. В HEAD `47631b0` исправлено: no-follow/nonblocking open lock-файла, проверка owner/nlink, блокировка через `FileLock::from_file` на уже открытом inode; root/generations/staging имеют режим 0700, новые lock/CURRENT/artifacts — 0600. Добавлены регрессионные тесты.
-- Staging finding закрывается только в ограниченной модели: root и доверенная родительская цепочка принадлежат сервисной учётной записи; недоверенные процессы под другими UID не имеют доступа к root. Same-UID и привилегированные процессы вне заявленной модели защиты.
-- PR не сливать до повторного Code Review, отдельного security-focused review и проверки всех review threads на точном HEAD.
+- HEAD: `621e670a6dcbda6f0ed11126b99fbf688300d417`; PR OPEN, не слит.
+- Последний полный успешный CI run #385 относится к предыдущему HEAD `47631b0`: Linux/macOS format, Clippy и tests PASS; cargo-audit 0.22.2, RustSec и source/license gates PASS. На текущем HEAD run #431 выполняется.
+- Code Review receipt на старом SHA `bd35db9` не переносится на текущий HEAD. Повторные Code Review и отдельный security-focused review на `621e670` запрошены; receipts ещё не получены.
+- Исправлены P2 по lock inode, staging directory permissions и pre-existing writable store: lock открывается no-follow/nonblocking и блокируется через `FileLock::from_file`; проверяются owner и nlink; root/generations/staging имеют 0700, новые lock/CURRENT/artifacts — 0600.
+- До чтения содержимого отклоняются существующие root/generations с group/world write; parent chain проверяется на владельца root/effective UID и отсутствие writable non-sticky компонентов. Sticky system directories допускаются. Добавлены тесты на writable root, writable generations, writable parent и сохранение исходного содержимого при отказе.
+- Filesystem root отклоняется; компоненты `..` в storage path отклоняются, чтобы не менять семантику разрешения пути при symlink. Компоненты `.` нормализуются без разрешения произвольных symlink.
+- Границы: доверенная родительская цепочка обязательна; same-UID и privileged attackers не покрываются; полная descriptor-relative реализация и GC/retention не реализованы.
+- PR не сливать до успешного CI на текущем SHA, повторного Code Review, отдельного security-focused review и проверки всех review threads.
 
 ### PR #13 — синтетическая модель наблюдения
 - HEAD: `e88df5693a5cc2cc8fcdcd94ac8d29d78e2fec37`; PR OPEN, не слит; base — PR #12.
