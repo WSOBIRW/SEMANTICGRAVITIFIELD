@@ -1552,6 +1552,32 @@ mod tests {
         );
     }
 
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_preexisting_group_or_world_writable_generations_before_reading() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = TestDirectory::new();
+        let root = directory.path();
+        let generations = root.join("generations");
+        fs::create_dir(&generations).unwrap();
+        fs::set_permissions(&generations, fs::Permissions::from_mode(0o777)).unwrap();
+
+        assert!(matches!(
+            FileRecoveryStorage::open(root),
+            Err(FileRecoveryStorageError::InsecureStoragePermissions)
+        ));
+        assert_eq!(
+            fs::metadata(&generations)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o777
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn rejects_writable_non_sticky_parent_before_trusting_store() {
