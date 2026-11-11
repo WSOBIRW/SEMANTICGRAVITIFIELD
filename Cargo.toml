@@ -13,5 +13,6 @@ path = "src/lib.rs"
 [dependencies]
 sha2 = "0.10"
 filelock = "=0.7.0"
+libc = "=0.2.191"
 
 [dev-dependencies]
