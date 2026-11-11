@@ -52,6 +52,7 @@ pub enum FileRecoveryStorageError {
     InvalidCurrent,
     InvalidLockFile,
     InvalidGenerationDirectory,
+    InvalidStoragePath,
     InsecureStoragePermissions,
     UnreferencedGenerationExists,
     ManifestGenerationMismatch {
@@ -77,6 +78,9 @@ impl std::fmt::Display for FileRecoveryStorageError {
             Self::InvalidLockFile => write!(f, "writer lock path is not a regular file"),
             Self::InvalidGenerationDirectory => {
                 write!(f, "invalid recovery generation directory")
+            }
+            Self::InvalidStoragePath => {
+                write!(f, "storage path contains a parent-directory component")
             }
             Self::InsecureStoragePermissions => {
                 write!(f, "storage path is writable by an untrusted local user")
@@ -778,26 +782,27 @@ fn anchor_storage_root(path: &Path) -> Result<PathBuf, FileRecoveryStorageError>
     } else {
         std::env::current_dir()?.join(path)
     };
-    let normalized = normalize_absolute_path(&absolute);
+    let normalized = normalize_absolute_path(&absolute)?;
     Ok(normalize_storage_root(&normalized))
 }
 
-fn normalize_absolute_path(path: &Path) -> PathBuf {
+fn normalize_absolute_path(
+    path: &Path,
+) -> Result<PathBuf, FileRecoveryStorageError> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
-            Component::ParentDir => {
-                if normalized.file_name().is_some() {
-                    normalized.pop();
-                }
-            }
+            // Do not collapse ".." lexically: if the preceding component is a
+            // symlink, filesystem resolution would traverse a different path.
+            // Requiring an already-normalized root path avoids that ambiguity.
+            Component::ParentDir => return Err(FileRecoveryStorageError::InvalidStoragePath),
             Component::Normal(value) => normalized.push(value),
         }
     }
-    normalized
+    Ok(normalized)
 }
 
 #[cfg(target_os = "macos")]
@@ -1545,7 +1550,11 @@ mod tests {
         ));
         assert!(matches!(
             FileRecoveryStorage::open(Path::new("/tmp/..")),
-            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+            Err(FileRecoveryStorageError::InvalidStoragePath)
+        ));
+        assert!(matches!(
+            FileRecoveryStorage::open(Path::new("../storage")),
+            Err(FileRecoveryStorageError::InvalidStoragePath)
         ));
     }
 
