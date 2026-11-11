@@ -376,7 +376,7 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
 
 #[cfg(test)]
 mod tests {
-    use super::noise_prefix;
+    use super::*;
 
 
     #[test]
