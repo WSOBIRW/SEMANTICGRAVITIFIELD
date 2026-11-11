@@ -69,6 +69,28 @@ pub struct SyntheticIntervention {
     pub delta: i64,
 }
 
+/// Эксплуатационные бюджеты наблюдения. Они ограничивают дополнительную
+/// работу и память функции, но не задают пределы формата или модели состояния.
+/// Значения можно расширить под доступные ресурсы вызывающей стороны.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservationLimits {
+    pub max_state_variables: usize,
+    pub max_visible_keys: usize,
+    pub max_total_input_key_bytes: usize,
+    pub max_output_bytes: usize,
+}
+
+impl Default for ObservationLimits {
+    fn default() -> Self {
+        Self {
+            max_state_variables: 100_000,
+            max_visible_keys: 100_000,
+            max_total_input_key_bytes: 16 * 1024 * 1024,
+            max_output_bytes: 16 * 1024 * 1024,
+        }
+    }
+}
+
 /// Ошибки синтетической модели.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExperimentError {
@@ -83,6 +105,12 @@ pub enum ExperimentError {
     UnknownVisibleKey,
     MissingInterventionTarget,
     ArithmeticOverflow,
+    ObservationLimitExceeded {
+        resource: &'static str,
+        actual: usize,
+        limit: usize,
+    },
+    ObservationSizeOverflow,
 }
 
 impl SyntheticState {
@@ -145,6 +173,52 @@ pub fn observe(
     state: &SyntheticState,
     observer: &SyntheticObserver,
 ) -> Result<ObservationView, ExperimentError> {
+    observe_with_limits(state, observer, ObservationLimits::default())
+}
+
+/// Формирует представление с явными бюджетами количества и объёма данных.
+///
+/// Проверки бюджета выполняются до создания индексных множеств и выходных
+/// буферов. max_output_bytes учитывает размер структуры результата,
+/// контейнеров и копируемых строковых байтов; это оценка полезной нагрузки,
+/// а не точная оценка allocator overhead.
+pub fn observe_with_limits(
+    state: &SyntheticState,
+    observer: &SyntheticObserver,
+    limits: ObservationLimits,
+) -> Result<ObservationView, ExperimentError> {
+    check_observation_limit(
+        "state_variables",
+        state.variables.len(),
+        limits.max_state_variables,
+    )?;
+    check_observation_limit(
+        "visible_keys",
+        observer.visible_keys.len(),
+        limits.max_visible_keys,
+    )?;
+
+    let mut input_key_bytes = state
+        .state_id
+        .len()
+        .checked_add(observer.observer_id.len())
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    for variable in &state.variables {
+        input_key_bytes = input_key_bytes
+            .checked_add(variable.key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    for key in &observer.visible_keys {
+        input_key_bytes = input_key_bytes
+            .checked_add(key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    check_observation_limit(
+        "total_input_key_bytes",
+        input_key_bytes,
+        limits.max_total_input_key_bytes,
+    )?;
+
     state.validate()?;
     observer.validate()?;
     let state_keys: BTreeSet<&str> = state
@@ -167,7 +241,32 @@ pub fn observe(
         state.step,
     );
 
-    let mut visible_variables = Vec::new();
+    let mut visible_count = 0_usize;
+    let mut visible_key_bytes = 0_usize;
+    for variable in &state.variables {
+        if visible_keys.contains(variable.key.as_str()) {
+            visible_count = visible_count
+                .checked_add(1)
+                .ok_or(ExperimentError::ObservationSizeOverflow)?;
+            visible_key_bytes = visible_key_bytes
+                .checked_add(variable.key.len())
+                .ok_or(ExperimentError::ObservationSizeOverflow)?;
+        }
+    }
+
+    let output_bytes = std::mem::size_of::<ObservationView>()
+        .checked_add(state.state_id.len())
+        .and_then(|size| size.checked_add(observer.observer_id.len()))
+        .and_then(|size| {
+            visible_count
+                .checked_mul(std::mem::size_of::<ObservedVariable>())
+                .and_then(|variables| size.checked_add(variables))
+        })
+        .and_then(|size| size.checked_add(visible_key_bytes))
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    check_observation_limit("output_bytes", output_bytes, limits.max_output_bytes)?;
+
+    let mut visible_variables = Vec::with_capacity(visible_count);
 
     for variable in &state.variables {
         if !visible_keys.contains(variable.key.as_str()) {
@@ -193,6 +292,21 @@ pub fn observe(
         source_step: state.step,
         visible_variables,
     })
+}
+
+fn check_observation_limit(
+    resource: &'static str,
+    actual: usize,
+    limit: usize,
+) -> Result<(), ExperimentError> {
+    if actual > limit {
+        return Err(ExperimentError::ObservationLimitExceeded {
+            resource,
+            actual,
+            limit,
+        });
+    }
+    Ok(())
 }
 
 /// Применяет вмешательство и возвращает новое состояние.
@@ -263,6 +377,129 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
 #[cfg(test)]
 mod tests {
     use super::noise_prefix;
+
+
+    #[test]
+    fn observation_limits_reject_large_state_before_index_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable { key: "a".to_owned(), value: 1 },
+                StateVariable { key: "b".to_owned(), value: 2 },
+            ],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["a".to_owned(), "b".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "state_variables",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_bound_input_key_bytes() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable { key: "price".to_owned(), value: 1 }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_total_input_key_bytes: 4,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "total_input_key_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_bound_output_before_cloning_visible_keys() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable { key: "price".to_owned(), value: 1 }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_output_bytes: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "output_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_are_configurable_without_changing_the_model() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable { key: "price".to_owned(), value: 1 }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: usize::MAX,
+            max_visible_keys: usize::MAX,
+            max_total_input_key_bytes: usize::MAX,
+            max_output_bytes: usize::MAX,
+        };
+
+        assert_eq!(
+            observe_with_limits(&state, &observer, limits)
+                .unwrap()
+                .visible_variables
+                .len(),
+            1
+        );
+    }
 
     #[test]
     fn noise_prefix_separates_state_id_from_step_boundaries() {
