@@ -256,9 +256,9 @@ impl FileRecoveryStorage {
         // Open with no-follow/nonblocking semantics so a path replacement cannot
         // redirect the read to a symlink or block on a FIFO.
         let current_file = open_regular_file_no_follow(&current_path).map_err(|error| {
-            if error.kind() == io::ErrorKind::NotFound
-                || error.raw_os_error() == Some(libc::ELOOP)
-            {
+            let invalid_path = error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ELOOP);
+            if invalid_path {
                 FileRecoveryStorageError::InvalidCurrent
             } else {
                 FileRecoveryStorageError::Io(error)
@@ -616,9 +616,9 @@ fn open_recovery_artifact(
     }
 
     let file = open_regular_file_no_follow(path).map_err(|error| {
-        if error.kind() == io::ErrorKind::NotFound
-            || error.raw_os_error() == Some(libc::ELOOP)
-        {
+        let invalid_path = error.kind() == io::ErrorKind::NotFound
+            || error.raw_os_error() == Some(libc::ELOOP);
+        if invalid_path {
             FileRecoveryStorageError::InvalidRecoveryArtifact(name)
         } else {
             FileRecoveryStorageError::Io(error)
@@ -899,7 +899,11 @@ mod tests {
 
         let directory = TestDirectory::new();
         let fifo = directory.path().join("nonblocking.fifo");
-        assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        assert!(Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success());
 
         let file = open_regular_file_no_follow(&fifo).unwrap();
         assert!(!file.metadata().unwrap().is_file());
