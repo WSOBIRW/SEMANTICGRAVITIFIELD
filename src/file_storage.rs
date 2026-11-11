@@ -1552,7 +1552,6 @@ mod tests {
         );
     }
 
-
     #[cfg(unix)]
     #[test]
     fn rejects_preexisting_group_or_world_writable_generations_before_reading() {
