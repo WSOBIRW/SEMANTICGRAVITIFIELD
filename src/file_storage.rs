@@ -207,7 +207,7 @@ impl FileRecoveryStorage {
     where
         F: FnMut(CommitStage) -> io::Result<()>,
     {
-        let root = root.as_ref().to_path_buf();
+        let root = normalize_storage_root(root.as_ref());
         create_dir_all_synced(&root)?;
         ensure_real_directory(&root)?;
         create_dir_all_synced(&root.join("generations"))?;
@@ -664,6 +664,29 @@ fn read_bounded_artifact(
     Ok(bytes)
 }
 
+#[cfg(target_os = "macos")]
+fn normalize_storage_root(path: &Path) -> PathBuf {
+    // macOS exposes several trusted system paths through compatibility symlinks.
+    // Resolve only these fixed system aliases; do not canonicalize the caller's
+    // storage path, because that would silently accept arbitrary symlink ancestors.
+    for (alias, canonical) in [
+        ("/var", "/private/var"),
+        ("/tmp", "/private/tmp"),
+        ("/etc", "/private/etc"),
+    ] {
+        let alias_path = Path::new(alias);
+        if let Ok(suffix) = path.strip_prefix(alias_path) {
+            return Path::new(canonical).join(suffix);
+        }
+    }
+    path.to_path_buf()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn normalize_storage_root(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
     // Resolve and sync every ancestor, not only components created by this call.
     // A concurrent opener may observe a directory after create_dir but before
@@ -801,6 +824,27 @@ mod tests {
             journal,
             manifest,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_trusted_system_path_aliases_are_normalized() {
+        assert_eq!(
+            normalize_storage_root(Path::new("/var/folders/test")),
+            PathBuf::from("/private/var/folders/test")
+        );
+        assert_eq!(
+            normalize_storage_root(Path::new("/tmp/sgf-storage")),
+            PathBuf::from("/private/tmp/sgf-storage")
+        );
+        assert_eq!(
+            normalize_storage_root(Path::new("/etc/sgf-storage")),
+            PathBuf::from("/private/etc/sgf-storage")
+        );
+        assert_eq!(
+            normalize_storage_root(Path::new("/various/sgf-storage")),
+            PathBuf::from("/various/sgf-storage")
+        );
     }
 
     #[test]
