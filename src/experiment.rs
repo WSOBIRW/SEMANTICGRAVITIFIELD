@@ -260,7 +260,6 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
     i128::from(hash) % width - bound
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::noise_prefix;
