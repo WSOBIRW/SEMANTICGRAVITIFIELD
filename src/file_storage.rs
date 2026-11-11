@@ -212,6 +212,9 @@ impl FileRecoveryStorage {
         F: FnMut(CommitStage) -> io::Result<()>,
     {
         let root = anchor_storage_root(root.as_ref())?;
+        if root.parent().is_none() {
+            return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
+        }
         create_dir_all_synced(&root)?;
         if let Some(parent) = root.parent() {
             ensure_trusted_parent_chain(parent)?;
