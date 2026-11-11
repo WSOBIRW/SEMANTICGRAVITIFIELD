@@ -1540,10 +1540,7 @@ mod tests {
         fs::write(&lock_path, b"replacement").unwrap();
 
         assert_eq!(lock.file().metadata().unwrap().ino(), original_inode);
-        assert_ne!(
-            fs::metadata(&lock_path).unwrap().ino(),
-            original_inode
-        );
+        assert_ne!(fs::metadata(&lock_path).unwrap().ino(), original_inode);
     }
 
     #[cfg(unix)]
