@@ -16,7 +16,7 @@
 - HEAD: `e88df5693a5cc2cc8fcdcd94ac8d29d78e2fec37`; PR OPEN, не слит; base — PR #12.
 - CI run #391 на предыдущем HEAD `bf6c07f` завершился SUCCESS: rustfmt, Clippy и 78 тестов PASS. После него добавлены re-exports API и тест лимита visible_keys; run #394 выявил только rustfmt, исправленный в текущем HEAD. CI run #395 ожидается.
 - P2 по неограниченным дополнительным allocations исправлен: ObservationLimits и observe_with_limits проверяют count/input-byte budgets до BTreeSet, output count/byte budget — до выделения Vec; индексы строятся один раз с одновременной проверкой уникальности. Значения по умолчанию конечные, но настраиваемые; они не являются пределами формата или модели.
-- Повторный Code Review и отдельный security-focused review на `e88df56` запрошены; receipts ещё не получены.
+- Повторный Code Review и отдельный security-focused review на точном HEAD `e88df56` запрошены; receipts ещё не получены.
 
 ### PR #12 — типизированная модель наблюдателя
 - HEAD: `886704f6971835809b00bb4065871c29fff5f661`; PR OPEN, не слит.
