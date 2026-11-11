@@ -1518,8 +1518,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn rejects_filesystem_root_as_storage_directory() {
         assert!(matches!(
