@@ -34,7 +34,7 @@
 ## Этап 3. Долговечное восстановление — в работе
 - [x] Контракт CAS поколений и строгий successor (PR #10).
 - [x] Первый Unix file-generation backend реализован в PR #14, но не принят в main; PR #11 закрыт как superseded.
-- [ ] Закрыть актуальные Code Review findings PR #14 на точном HEAD. P2 по RustSec advisory scan проверен в CI #321/#347/#353. Исправлены stale staging/CURRENT collisions (`290afc3`), macOS system aliases (`156aea8`), anchoring relative root at open и FIFO/symlink-safe artifact opening (`8bb0b05`). CI #363 на `8bb0b05`: macOS format/Clippy/tests PASS; Linux format/Clippy/tests PASS; cargo-audit выполняется, RustSec и source/license gates ожидают. Повторный Code Review и отдельный security-focused review на точном HEAD `8bb0b05` ожидаются.
+- [ ] Закрыть актуальные Code Review findings PR #14 на точном HEAD. P2 по RustSec advisory scan проверен в CI #321/#347/#353. Исправлены stale staging/CURRENT collisions (`290afc3`), macOS system aliases (`156aea8`), anchoring relative root, FIFO/symlink-safe artifact opening и безопасное открытие CURRENT (`bd35db9`). CI #373: Linux format/Clippy/tests PASS; macOS format/Clippy PASS, tests выполняются; cargo-audit устанавливается, RustSec и source/license gates ожидают. Повторный Code Review и отдельный security-focused review на точном HEAD `bd35db9` ожидаются.
 - [ ] Получить отдельный Security Review PR #14 на точном актуальном HEAD.
 - [ ] Провести независимое ревью файловых операций, symlink/TOCTOU, CURRENT parsing, orphan handling и конкурентных writers.
 - [ ] Проверить crash consistency на заявленной ОС/ФС; отдельно обозначить пределы тестов процесса и физической потери питания.
