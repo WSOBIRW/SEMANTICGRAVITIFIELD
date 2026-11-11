@@ -817,7 +817,7 @@ fn create_private_directory(path: &Path) -> io::Result<()> {
 fn ensure_trusted_parent_chain(path: &Path) -> Result<(), FileRecoveryStorageError> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let mut current = PathBuf::new();
         for component in path.components() {
             current.push(component);
