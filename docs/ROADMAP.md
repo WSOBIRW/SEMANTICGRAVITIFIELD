@@ -34,7 +34,7 @@
 ## Этап 3. Долговечное восстановление — в работе
 - [x] Контракт CAS поколений и строгий successor (PR #10).
 - [x] Первый Unix file-generation backend реализован в PR #14, но не принят в main; PR #11 закрыт как superseded.
-- [ ] Закрыть актуальные Code Review findings PR #14 на точном HEAD. P2 по RustSec advisory scan исправлен и проверен в CI #321 и #347. P2 по stale staging/CURRENT temp исправлен в `290afc3`, inline thread разрешён. P2 по macOS системным symlink-алиасам исправлен в `156aea8`: нормализуются только фиксированные `/var`, `/tmp`, `/etc`, произвольные symlink-ancestor не разрешаются. CI #353 на `09cc3d4`: macOS и Linux format/Clippy/tests PASS; Linux cargo-audit, RustSec и source/license gates на момент последней проверки ещё выполнялись. Повторный Code Review на `09cc3d4` ожидается.
+- [ ] Закрыть актуальные Code Review findings PR #14 на точном HEAD. P2 по RustSec advisory scan проверен в CI #321/#347/#353. Исправлены stale staging/CURRENT collisions (`290afc3`), macOS system aliases (`156aea8`), anchoring relative root at open и FIFO/symlink-safe artifact opening (`8bb0b05`). CI #363 на `8bb0b05`: macOS format/Clippy/tests PASS; Linux format/Clippy/tests PASS; cargo-audit выполняется, RustSec и source/license gates ожидают. Повторный Code Review и отдельный security-focused review на точном HEAD `8bb0b05` ожидаются.
 - [ ] Получить отдельный Security Review PR #14 на точном актуальном HEAD.
 - [ ] Провести независимое ревью файловых операций, symlink/TOCTOU, CURRENT parsing, orphan handling и конкурентных writers.
 - [ ] Проверить crash consistency на заявленной ОС/ФС; отдельно обозначить пределы тестов процесса и физической потери питания.
