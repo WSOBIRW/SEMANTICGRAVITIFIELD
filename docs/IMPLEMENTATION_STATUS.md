@@ -2,6 +2,32 @@
 
 ## Актуальный срез на 2026-11-11
 
+Этот раздел имеет приоритет над историческими записями ниже. Проверки и review относятся только к указанному SHA.
+
+### PR #14 — файловое хранилище
+- HEAD: `47631b001d151f997a0f5c48f09cd2555aeb29f0`; PR OPEN, не слит.
+- CI run #385 на точном HEAD завершился SUCCESS: Linux и macOS format/Clippy/tests PASS; Linux cargo-audit 0.22.2, RustSec advisory gate и source/license gate PASS.
+- Code Review receipt на предыдущем SHA `bd35db9` не переносится на текущий HEAD. Повторный Code Review и отдельный security-focused review на `47631b0` запрошены; подтверждённые результаты ещё не получены.
+- Security review выявил P2 по повторному открытию lock path, замене staging-каталога и широким правам файлов. В HEAD `47631b0` исправлено: no-follow/nonblocking open lock-файла, проверка owner/nlink, блокировка через `FileLock::from_file` на уже открытом inode; root/generations/staging имеют режим 0700, новые lock/CURRENT/artifacts — 0600. Добавлены регрессионные тесты.
+- Staging finding закрывается только в ограниченной модели: root и доверенная родительская цепочка принадлежат сервисной учётной записи; недоверенные процессы под другими UID не имеют доступа к root. Same-UID и привилегированные процессы вне заявленной модели защиты.
+- PR не сливать до повторного Code Review, отдельного security-focused review и проверки всех review threads на точном HEAD.
+
+### PR #13 — синтетическая модель наблюдения
+- HEAD: `e88df5693a5cc2cc8fcdcd94ac8d29d78e2fec37`; PR OPEN, не слит; base — PR #12.
+- CI run #391 на предыдущем HEAD `bf6c07f` завершился SUCCESS: rustfmt, Clippy и 78 тестов PASS. После него добавлены re-exports API и тест лимита visible_keys; run #394 выявил только rustfmt, исправленный в текущем HEAD. CI run #395 ожидается.
+- P2 по неограниченным дополнительным allocations исправлен: ObservationLimits и observe_with_limits проверяют count/input-byte budgets до BTreeSet, output count/byte budget — до выделения Vec; индексы строятся один раз с одновременной проверкой уникальности. Значения по умолчанию конечные, но настраиваемые; они не являются пределами формата или модели.
+- Повторный Code Review и отдельный security-focused review на `e88df56` запрошены; receipts ещё не получены.
+
+### PR #12 — типизированная модель наблюдателя
+- HEAD: `886704f6971835809b00bb4065871c29fff5f661`; PR OPEN, не слит.
+- CI run #323 на точном HEAD SUCCESS; повторный Code Review receipt на точный SHA получен без существенных замечаний.
+- Отдельный security-focused review запрошен, подтверждённого результата пока нет.
+- Digest полных определений обеспечивает content binding, но не аутентификацию. Внешний trust anchor остаётся отдельной задачей.
+
+Ни один из PR #12, #13, #14 не включён в main. Открытые PR не считаются реализованными в main.
+
+## Актуальный срез на 2026-11-11
+
 Этот срез имеет приоритет над историческими записями ниже, если они описывают более ранние SHA или CI runs.
 
 ### PR #14 — файловое хранилище
