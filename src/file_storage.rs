@@ -511,6 +511,54 @@ fn reserve_publish_paths(
     }
 }
 
+impl RecoveryStorage for FileRecoveryStorage {
+    type Error = FileRecoveryStorageError;
+
+    fn load_current(&self) -> Result<Option<RecoveryPackage>, Self::Error> {
+        self.read_current()
+    }
+
+    fn commit_generation(
+        &mut self,
+        expected_current_generation: Option<u64>,
+        package: RecoveryPackage,
+    ) -> Result<(), RecoveryStorageError<Self::Error>> {
+        let lock_path = self.root.join(".writer.lock");
+        let mut lock = filelock::new(&lock_path)
+            .map_err(FileRecoveryStorageError::Io)
+            .map_err(RecoveryStorageError::Backend)?;
+        let _guard = lock
+            .lock()
+            .map_err(FileRecoveryStorageError::Io)
+            .map_err(RecoveryStorageError::Backend)?;
+
+        // Staging cleanup is intentionally disabled: path-based traversal is
+        // vulnerable to replacement races. Reclamation needs pinned no-follow handles.
+        let current = self.read_current().map_err(RecoveryStorageError::Backend)?;
+        let actual_generation = current.as_ref().map(|value| value.manifest.generation);
+        if actual_generation.is_none()
+            && directory_has_entries(&self.root.join("generations"))
+                .map_err(RecoveryStorageError::Backend)?
+        {
+            return Err(RecoveryStorageError::Backend(
+                FileRecoveryStorageError::UnreferencedGenerationExists,
+            ));
+        }
+        validate_generation_transition(
+            expected_current_generation,
+            actual_generation,
+            package.manifest.generation,
+        )
+        .map_err(RecoveryStorageError::Generation)?;
+
+        package
+            .validate()
+            .map_err(RecoveryStorageError::InvalidPackage)?;
+
+        self.publish(package).map_err(RecoveryStorageError::Backend)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CommitStage {
     LayoutDirectoriesSynced,
