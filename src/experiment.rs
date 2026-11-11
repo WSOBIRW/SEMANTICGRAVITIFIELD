@@ -219,15 +219,40 @@ pub fn observe_with_limits(
         limits.max_total_input_bytes,
     )?;
 
-    state.validate()?;
-    observer.validate()?;
-    let state_keys: BTreeSet<&str> = state
-        .variables
-        .iter()
-        .map(|variable| variable.key.as_str())
-        .collect();
-    let visible_keys: BTreeSet<&str> = observer.visible_keys.iter().map(String::as_str).collect();
+    if state.state_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyStateId);
+    }
+    if observer.observer_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyObserverId);
+    }
+    if observer.version == 0 {
+        return Err(ExperimentError::ZeroObserverVersion);
+    }
+    if observer.resolution == 0 {
+        return Err(ExperimentError::ZeroResolution);
+    }
+    if observer.noise_bound > i64::MAX as u64 {
+        return Err(ExperimentError::NoiseBoundOutOfRange);
+    }
 
+    // Индексы создаются один раз после проверки входных бюджетов. Здесь же
+    // проверяется уникальность, чтобы не выделять второй набор внутри validate().
+    let mut state_keys = BTreeSet::new();
+    for variable in &state.variables {
+        if variable.key.trim().is_empty() {
+            return Err(ExperimentError::EmptyVariableKey);
+        }
+        if !state_keys.insert(variable.key.as_str()) {
+            return Err(ExperimentError::DuplicateVariableKey);
+        }
+    }
+
+    let mut visible_keys = BTreeSet::new();
+    for key in &observer.visible_keys {
+        if !visible_keys.insert(key.as_str()) {
+            return Err(ExperimentError::DuplicateVisibleKey);
+        }
+    }
     if visible_keys.iter().any(|key| !state_keys.contains(key)) {
         return Err(ExperimentError::UnknownVisibleKey);
     }
