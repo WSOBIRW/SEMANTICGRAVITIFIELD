@@ -404,11 +404,14 @@ pub fn apply_intervention_with_limits(
         .checked_add(1)
         .ok_or(ExperimentError::ArithmeticOverflow)?;
 
-    let key_bytes = state.variables.iter().try_fold(0_usize, |total, variable| {
-        total
-            .checked_add(variable.key.len())
-            .ok_or(ExperimentError::ObservationSizeOverflow)
-    })?;
+    let key_bytes = state
+        .variables
+        .iter()
+        .try_fold(0_usize, |total, variable| {
+            total
+                .checked_add(variable.key.len())
+                .ok_or(ExperimentError::ObservationSizeOverflow)
+        })?;
     let output_bytes = std::mem::size_of::<SyntheticState>()
         .checked_add(state.state_id.len())
         .and_then(|size| {
