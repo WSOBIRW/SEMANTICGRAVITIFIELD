@@ -1,0 +1,788 @@
+//! Минимальное синтетическое ядро экспериментов с наблюдателями.
+//!
+//! Скрытое состояние, проекция наблюдения и вмешательство разделены.
+//! Вызов observe не изменяет состояние. Изменение возможно только через
+//! явный apply_intervention. Типы здесь описывают синтетическую модель,
+//! а не онтологию реального смыслового поля.
+
+use std::collections::BTreeSet;
+
+/// Одно измеряемое свойство синтетической системы.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateVariable {
+    pub key: String,
+    pub value: i64,
+}
+
+/// Полное скрытое состояние синтетической системы.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyntheticState {
+    pub state_id: String,
+    pub step: u64,
+    pub variables: Vec<StateVariable>,
+}
+
+/// Конфигурация синтетической проекции наблюдателя.
+///
+/// Важно: SyntheticObserver создаётся вызывающей стороной. Поле
+/// `visible_keys` задаёт только проекцию данных для эксперимента и НЕ является
+/// проверкой полномочий, границей конфиденциальности или механизмом изоляции.
+/// Не передавайте через этот API секретные данные в расчёте на сокрытие ключей.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyntheticObserver {
+    pub observer_id: String,
+    pub version: u32,
+    /// Фильтр проекции, а не список разрешений безопасности.
+    /// Пустой список означает отсутствие переменных в представлении.
+    pub visible_keys: Vec<String>,
+    /// Шаг квантования; 1 означает отсутствие квантования.
+    pub resolution: u64,
+    /// Максимальная абсолютная добавляемая ошибка измерения.
+    /// Только синтетический шум; не средство приватности или сокрытия данных.
+    pub noise_bound: u64,
+    /// Публичный seed детерминированного шума симуляции.
+    /// Не предназначен для генерации секретного или криптографического шума.
+    pub noise_seed: u64,
+}
+
+/// Одно значение в представлении наблюдателя.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservedVariable {
+    pub key: String,
+    pub value: i64,
+}
+
+/// Производное представление. Не является исходным состоянием.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservationView {
+    pub state_id: String,
+    pub observer_id: String,
+    pub observer_version: u32,
+    pub source_step: u64,
+    pub visible_variables: Vec<ObservedVariable>,
+}
+
+/// Явное вмешательство в одну переменную состояния.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyntheticIntervention {
+    pub variable_key: String,
+    pub delta: i64,
+}
+
+/// Эксплуатационные бюджеты наблюдения. Они ограничивают дополнительную
+/// работу и память функции, но не задают пределы формата или модели состояния.
+/// Значения можно расширить под доступные ресурсы вызывающей стороны.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservationLimits {
+    pub max_state_variables: usize,
+    pub max_visible_keys: usize,
+    pub max_total_input_bytes: usize,
+    pub max_output_bytes: usize,
+}
+
+impl Default for ObservationLimits {
+    fn default() -> Self {
+        Self {
+            max_state_variables: 100_000,
+            max_visible_keys: 100_000,
+            max_total_input_bytes: 16 * 1024 * 1024,
+            max_output_bytes: 16 * 1024 * 1024,
+        }
+    }
+}
+
+/// Ошибки синтетической модели.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExperimentError {
+    EmptyStateId,
+    DuplicateVariableKey,
+    EmptyVariableKey,
+    EmptyObserverId,
+    ZeroObserverVersion,
+    ZeroResolution,
+    NoiseBoundOutOfRange,
+    DuplicateVisibleKey,
+    UnknownVisibleKey,
+    MissingInterventionTarget,
+    ArithmeticOverflow,
+    ObservationLimitExceeded {
+        resource: &'static str,
+        actual: usize,
+        limit: usize,
+    },
+    ObservationSizeOverflow,
+}
+
+impl SyntheticState {
+    pub fn validate(&self) -> Result<(), ExperimentError> {
+        if self.state_id.trim().is_empty() {
+            return Err(ExperimentError::EmptyStateId);
+        }
+
+        let mut keys = BTreeSet::new();
+        for variable in &self.variables {
+            if variable.key.trim().is_empty() {
+                return Err(ExperimentError::EmptyVariableKey);
+            }
+            if !keys.insert(variable.key.as_str()) {
+                return Err(ExperimentError::DuplicateVariableKey);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl SyntheticObserver {
+    pub fn validate(&self) -> Result<(), ExperimentError> {
+        if self.observer_id.trim().is_empty() {
+            return Err(ExperimentError::EmptyObserverId);
+        }
+        if self.version == 0 {
+            return Err(ExperimentError::ZeroObserverVersion);
+        }
+        if self.resolution == 0 {
+            return Err(ExperimentError::ZeroResolution);
+        }
+        if self.noise_bound > i64::MAX as u64 {
+            return Err(ExperimentError::NoiseBoundOutOfRange);
+        }
+        let mut visible_keys = BTreeSet::new();
+        for key in &self.visible_keys {
+            if !visible_keys.insert(key.as_str()) {
+                return Err(ExperimentError::DuplicateVisibleKey);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Формирует представление по фильтру проекции состояния.
+///
+/// `visible_keys` не проверяет полномочия вызывающей стороны. Вызывающий код
+/// может сформировать SyntheticObserver с любым набором ключей, включая все
+/// ключи состояния. Это намеренно простая синтетическая проекция, а не
+/// security boundary. Контроль доступа, если он нужен приложению, должен
+/// выполняться отдельным доверенным слоем до передачи данных в эту функцию.
+///
+/// Функция не изменяет исходное состояние. Повторный вызов с одинаковыми
+/// аргументами возвращает то же представление. Детерминированный шум является
+/// только параметром симуляции: он не обеспечивает конфиденциальность,
+/// дифференциальную приватность или криптографическую непредсказуемость.
+pub fn observe(
+    state: &SyntheticState,
+    observer: &SyntheticObserver,
+) -> Result<ObservationView, ExperimentError> {
+    observe_with_limits(state, observer, ObservationLimits::default())
+}
+
+/// Формирует представление с явными бюджетами количества и объёма данных.
+///
+/// Проверки бюджета выполняются до создания индексных множеств и выходных
+/// буферов. max_output_bytes учитывает размер структуры результата,
+/// контейнеров и копируемых строковых байтов; это оценка полезной нагрузки,
+/// а не точная оценка allocator overhead.
+pub fn observe_with_limits(
+    state: &SyntheticState,
+    observer: &SyntheticObserver,
+    limits: ObservationLimits,
+) -> Result<ObservationView, ExperimentError> {
+    check_observation_limit(
+        "state_variables",
+        state.variables.len(),
+        limits.max_state_variables,
+    )?;
+    check_observation_limit(
+        "visible_keys",
+        observer.visible_keys.len(),
+        limits.max_visible_keys,
+    )?;
+
+    let mut input_key_bytes = state
+        .state_id
+        .len()
+        .checked_add(observer.observer_id.len())
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    for variable in &state.variables {
+        input_key_bytes = input_key_bytes
+            .checked_add(variable.key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    for key in &observer.visible_keys {
+        input_key_bytes = input_key_bytes
+            .checked_add(key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    check_observation_limit(
+        "total_input_bytes",
+        input_key_bytes,
+        limits.max_total_input_bytes,
+    )?;
+
+    if state.state_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyStateId);
+    }
+    if observer.observer_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyObserverId);
+    }
+    if observer.version == 0 {
+        return Err(ExperimentError::ZeroObserverVersion);
+    }
+    if observer.resolution == 0 {
+        return Err(ExperimentError::ZeroResolution);
+    }
+    if observer.noise_bound > i64::MAX as u64 {
+        return Err(ExperimentError::NoiseBoundOutOfRange);
+    }
+
+    // Индексы создаются один раз после проверки входных бюджетов. Здесь же
+    // проверяется уникальность, чтобы не выделять второй набор внутри validate().
+    let mut state_keys = BTreeSet::new();
+    for variable in &state.variables {
+        if variable.key.trim().is_empty() {
+            return Err(ExperimentError::EmptyVariableKey);
+        }
+        if !state_keys.insert(variable.key.as_str()) {
+            return Err(ExperimentError::DuplicateVariableKey);
+        }
+    }
+
+    let mut visible_keys = BTreeSet::new();
+    for key in &observer.visible_keys {
+        if !visible_keys.insert(key.as_str()) {
+            return Err(ExperimentError::DuplicateVisibleKey);
+        }
+    }
+    if visible_keys.iter().any(|key| !state_keys.contains(key)) {
+        return Err(ExperimentError::UnknownVisibleKey);
+    }
+
+    // Общая часть хеша вычисляется один раз на наблюдение, а не повторно
+    // для каждой переменной. Это устраняет умножение длины ID на число ключей.
+    let shared_noise_prefix = noise_prefix(
+        observer.noise_seed,
+        &observer.observer_id,
+        &state.state_id,
+        state.step,
+    );
+
+    let mut visible_count = 0_usize;
+    let mut visible_key_bytes = 0_usize;
+    for variable in &state.variables {
+        if visible_keys.contains(variable.key.as_str()) {
+            visible_count = visible_count
+                .checked_add(1)
+                .ok_or(ExperimentError::ObservationSizeOverflow)?;
+            visible_key_bytes = visible_key_bytes
+                .checked_add(variable.key.len())
+                .ok_or(ExperimentError::ObservationSizeOverflow)?;
+        }
+    }
+
+    let output_bytes = std::mem::size_of::<ObservationView>()
+        .checked_add(state.state_id.len())
+        .and_then(|size| size.checked_add(observer.observer_id.len()))
+        .and_then(|size| {
+            visible_count
+                .checked_mul(std::mem::size_of::<ObservedVariable>())
+                .and_then(|variables| size.checked_add(variables))
+        })
+        .and_then(|size| size.checked_add(visible_key_bytes))
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    check_observation_limit("output_bytes", output_bytes, limits.max_output_bytes)?;
+
+    let mut visible_variables = Vec::with_capacity(visible_count);
+
+    for variable in &state.variables {
+        if !visible_keys.contains(variable.key.as_str()) {
+            continue;
+        }
+
+        let resolution = i128::from(observer.resolution);
+        let quantized = i128::from(variable.value).div_euclid(resolution) * resolution;
+        let noise = deterministic_noise(shared_noise_prefix, &variable.key, observer.noise_bound);
+        let measured = quantized + noise;
+
+        let value = i64::try_from(measured).map_err(|_| ExperimentError::ArithmeticOverflow)?;
+        visible_variables.push(ObservedVariable {
+            key: variable.key.clone(),
+            value,
+        });
+    }
+
+    Ok(ObservationView {
+        state_id: state.state_id.clone(),
+        observer_id: observer.observer_id.clone(),
+        observer_version: observer.version,
+        source_step: state.step,
+        visible_variables,
+    })
+}
+
+fn check_observation_limit(
+    resource: &'static str,
+    actual: usize,
+    limit: usize,
+) -> Result<(), ExperimentError> {
+    if actual > limit {
+        return Err(ExperimentError::ObservationLimitExceeded {
+            resource,
+            actual,
+            limit,
+        });
+    }
+    Ok(())
+}
+
+/// Применяет вмешательство и возвращает новое состояние.
+///
+/// Исходное состояние остаётся неизменным. Увеличение шага и изменение
+/// значения выполняются с проверкой переполнения.
+pub fn apply_intervention(
+    state: &SyntheticState,
+    intervention: &SyntheticIntervention,
+) -> Result<SyntheticState, ExperimentError> {
+    apply_intervention_with_limits(state, intervention, ObservationLimits::default())
+}
+
+/// Применяет вмешательство с проверкой ресурсных бюджетов до индексации и
+/// клонирования состояния. Бюджет выходного состояния учитывает структуры,
+/// контейнер и копируемые байты строк, но не является точной оценкой
+/// allocator overhead.
+pub fn apply_intervention_with_limits(
+    state: &SyntheticState,
+    intervention: &SyntheticIntervention,
+    limits: ObservationLimits,
+) -> Result<SyntheticState, ExperimentError> {
+    check_observation_limit(
+        "state_variables",
+        state.variables.len(),
+        limits.max_state_variables,
+    )?;
+
+    let mut input_bytes = state
+        .state_id
+        .len()
+        .checked_add(intervention.variable_key.len())
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    for variable in &state.variables {
+        input_bytes = input_bytes
+            .checked_add(variable.key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    check_observation_limit(
+        "total_input_bytes",
+        input_bytes,
+        limits.max_total_input_bytes,
+    )?;
+
+    if state.state_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyStateId);
+    }
+
+    let mut state_keys = BTreeSet::new();
+    let mut target_index = None;
+    for (index, variable) in state.variables.iter().enumerate() {
+        if variable.key.trim().is_empty() {
+            return Err(ExperimentError::EmptyVariableKey);
+        }
+        if !state_keys.insert(variable.key.as_str()) {
+            return Err(ExperimentError::DuplicateVariableKey);
+        }
+        if variable.key == intervention.variable_key {
+            target_index = Some(index);
+        }
+    }
+    let target_index = target_index.ok_or(ExperimentError::MissingInterventionTarget)?;
+
+    let next_value = state.variables[target_index]
+        .value
+        .checked_add(intervention.delta)
+        .ok_or(ExperimentError::ArithmeticOverflow)?;
+    let next_step = state
+        .step
+        .checked_add(1)
+        .ok_or(ExperimentError::ArithmeticOverflow)?;
+
+    let key_bytes = state
+        .variables
+        .iter()
+        .try_fold(0_usize, |total, variable| {
+            total
+                .checked_add(variable.key.len())
+                .ok_or(ExperimentError::ObservationSizeOverflow)
+        })?;
+    let output_bytes = std::mem::size_of::<SyntheticState>()
+        .checked_add(state.state_id.len())
+        .and_then(|size| {
+            state
+                .variables
+                .len()
+                .checked_mul(std::mem::size_of::<StateVariable>())
+                .and_then(|variables| size.checked_add(variables))
+        })
+        .and_then(|size| size.checked_add(key_bytes))
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    check_observation_limit("output_bytes", output_bytes, limits.max_output_bytes)?;
+
+    let mut next = state.clone();
+    next.variables[target_index].value = next_value;
+    next.step = next_step;
+    Ok(next)
+}
+
+fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn noise_prefix(seed: u64, observer_id: &str, state_id: &str, step: u64) -> u64 {
+    const DOMAIN: &[u8] = b"SGF/SYNTHETIC-OBSERVER-NOISE/v1";
+
+    let hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
+    let hash = hash_bytes(hash, DOMAIN);
+    let observer_len = (observer_id.len() as u64).to_le_bytes();
+    let hash = hash_bytes(hash, &observer_len);
+    let hash = hash_bytes(hash, observer_id.as_bytes());
+    let state_len = (state_id.len() as u64).to_le_bytes();
+    let hash = hash_bytes(hash, &state_len);
+    let hash = hash_bytes(hash, state_id.as_bytes());
+    hash_bytes(hash, &step.to_le_bytes())
+}
+
+fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
+    if bound == 0 {
+        return 0;
+    }
+
+    let hash = hash_bytes(prefix, key.as_bytes());
+
+    // Для bound <= i64::MAX ширина 2 * bound + 1 помещается в u64.
+    // Преобразование в i128 до сложения исключает переполнение.
+    let bound = i128::from(bound);
+    let width = bound * 2 + 1;
+    i128::from(hash) % width - bound
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn intervention_limits_reject_large_state_before_index_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable {
+                    key: "a".to_owned(),
+                    value: 1,
+                },
+                StateVariable {
+                    key: "b".to_owned(),
+                    value: 2,
+                },
+            ],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "missing".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "state_variables",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn intervention_limits_reject_large_input_before_validation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "long-variable-key".to_owned(),
+                value: 1,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "missing".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_total_input_bytes: 4,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "total_input_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn intervention_limits_bound_clone_before_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 10,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "price".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_output_bytes: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "output_bytes",
+                ..
+            })
+        ));
+        assert_eq!(state.variables[0].value, 10);
+    }
+
+    #[test]
+    fn intervention_limits_are_configurable_and_preserve_state() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 10,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "price".to_owned(),
+            delta: 2,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: usize::MAX,
+            max_visible_keys: usize::MAX,
+            max_total_input_bytes: usize::MAX,
+            max_output_bytes: usize::MAX,
+        };
+
+        let next = apply_intervention_with_limits(&state, &intervention, limits).unwrap();
+        assert_eq!(next.variables[0].value, 12);
+        assert_eq!(next.step, 2);
+        assert_eq!(state.variables[0].value, 10);
+        assert_eq!(state.step, 1);
+    }
+
+    #[test]
+    fn observation_limits_reject_large_state_before_index_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable {
+                    key: "a".to_owned(),
+                    value: 1,
+                },
+                StateVariable {
+                    key: "b".to_owned(),
+                    value: 2,
+                },
+            ],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["a".to_owned(), "b".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "state_variables",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_reject_large_visible_key_list() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable {
+                    key: "a".to_owned(),
+                    value: 1,
+                },
+                StateVariable {
+                    key: "b".to_owned(),
+                    value: 2,
+                },
+            ],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["a".to_owned(), "b".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_visible_keys: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "visible_keys",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_bound_total_input_bytes() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 1,
+            }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_total_input_bytes: 4,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "total_input_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_bound_output_before_cloning_visible_keys() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 1,
+            }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_output_bytes: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "output_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn observation_limits_are_configurable_without_changing_the_model() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 1,
+            }],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["price".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: usize::MAX,
+            max_visible_keys: usize::MAX,
+            max_total_input_bytes: usize::MAX,
+            max_output_bytes: usize::MAX,
+        };
+
+        assert_eq!(
+            observe_with_limits(&state, &observer, limits)
+                .unwrap()
+                .visible_variables
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn noise_prefix_separates_state_id_from_step_boundaries() {
+        // Без длины state_id эти разные пары имели одинаковую последовательность
+        // байтов: b"a" + 98_u64_le и b"ab" + 0_u64_le.
+        assert_ne!(
+            noise_prefix(7, "observer", "a", 98),
+            noise_prefix(7, "observer", "ab", 0)
+        );
+    }
+
+    #[test]
+    fn noise_prefix_is_domain_and_seed_scoped() {
+        let baseline = noise_prefix(7, "observer", "state", 1);
+        assert_ne!(baseline, noise_prefix(8, "observer", "state", 1));
+        assert_ne!(baseline, noise_prefix(7, "other", "state", 1));
+        assert_ne!(baseline, noise_prefix(7, "observer", "state", 2));
+    }
+}
