@@ -210,8 +210,10 @@ impl FileRecoveryStorage {
         let root = anchor_storage_root(root.as_ref())?;
         create_dir_all_synced(&root)?;
         ensure_real_directory(&root)?;
+        ensure_private_directory(&root)?;
         create_dir_all_synced(&root.join("generations"))?;
         ensure_real_directory(&root.join("generations"))?;
+        ensure_private_directory(&root.join("generations"))?;
 
         // Persist both directory entries before any commit can publish CURRENT.
         // Otherwise a power loss could preserve CURRENT while losing "generations/".
@@ -219,20 +221,8 @@ impl FileRecoveryStorage {
         hook(CommitStage::LayoutDirectoriesSynced)?;
 
         let lock_path = root.join(".writer.lock");
-        match OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-        {
-            Ok(file) => file.sync_all()?,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error.into()),
-        }
-        let lock_metadata = fs::symlink_metadata(&lock_path)?;
-        if !lock_metadata.file_type().is_file() || lock_metadata.file_type().is_symlink() {
-            return Err(FileRecoveryStorageError::InvalidLockFile);
-        }
+        let lock_file = open_lock_file(&lock_path)?;
+        lock_file.sync_all()?;
         Ok(Self { root, read_limits })
     }
 
@@ -484,7 +474,7 @@ fn reserve_publish_paths(
 
     loop {
         let stage_dir = root.join(format!(".staging-g-{generation:020}-p{pid}-{token}"));
-        match fs::create_dir(&stage_dir) {
+        match create_private_directory(&stage_dir) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 token = token.checked_add(1).ok_or_else(|| {
@@ -499,11 +489,7 @@ fn reserve_publish_paths(
         }
 
         let current_temp = root.join(format!(".CURRENT-p{pid}-{token}"));
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&current_temp)
-        {
+        match open_new_private_file(&current_temp) {
             Ok(file) => return Ok((stage_dir, current_temp, file)),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 // This staging directory belongs to this invocation. The
@@ -537,9 +523,10 @@ impl RecoveryStorage for FileRecoveryStorage {
         package: RecoveryPackage,
     ) -> Result<(), RecoveryStorageError<Self::Error>> {
         let lock_path = self.root.join(".writer.lock");
-        let mut lock = filelock::new(&lock_path)
+        let lock_file = open_lock_file(&lock_path)
             .map_err(FileRecoveryStorageError::Io)
             .map_err(RecoveryStorageError::Backend)?;
+        let mut lock = filelock::FileLock::from_file(lock_file);
         let _guard = lock
             .lock()
             .map_err(FileRecoveryStorageError::Io)
@@ -586,6 +573,49 @@ enum CommitStage {
     CurrentSynced,
     CurrentPublished,
     RootDirectorySynced,
+}
+
+fn open_lock_file(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.nlink() != 1
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "writer lock must be an owned regular file with one link",
+            ));
+        }
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        Ok(file)
+    }
+
+    #[cfg(not(unix))]
+    {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "writer lock is not a regular file",
+            ));
+        }
+        Ok(file)
+    }
 }
 
 fn open_regular_file_no_follow(path: &Path) -> io::Result<File> {
@@ -741,6 +771,39 @@ fn normalize_storage_root(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+fn create_private_directory(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
+}
+
+fn ensure_private_directory(path: &Path) -> Result<(), FileRecoveryStorageError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_dir()
+            || metadata.file_type().is_symlink()
+            || metadata.uid() != unsafe { libc::geteuid() }
+        {
+            return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
+        }
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    #[cfg(not(unix))]
+    {
+        ensure_real_directory(path)?;
+    }
+    Ok(())
+}
+
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
     // Resolve and sync every ancestor, not only components created by this call.
     // A concurrent opener may observe a directory after create_dir but before
@@ -761,7 +824,7 @@ fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir(path).or_else(|error| {
+            create_private_directory(path).or_else(|error| {
                 if error.kind() == io::ErrorKind::AlreadyExists {
                     Ok(())
                 } else {
@@ -796,8 +859,25 @@ fn directory_has_entries(path: &Path) -> Result<bool, FileRecoveryStorageError> 
     Ok(fs::read_dir(path)?.next().is_some())
 }
 
+fn open_new_private_file(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        OpenOptions::new().write(true).create_new(true).open(path)
+    }
+}
+
 fn write_new_sync(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let mut file = open_new_private_file(path)?;
     file.write_all(bytes)?;
     file.sync_all()
 }
