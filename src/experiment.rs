@@ -342,24 +342,89 @@ pub fn apply_intervention(
     state: &SyntheticState,
     intervention: &SyntheticIntervention,
 ) -> Result<SyntheticState, ExperimentError> {
-    state.validate()?;
+    apply_intervention_with_limits(state, intervention, ObservationLimits::default())
+}
 
-    let mut next = state.clone();
-    let variable = next
-        .variables
-        .iter_mut()
-        .find(|variable| variable.key == intervention.variable_key)
-        .ok_or(ExperimentError::MissingInterventionTarget)?;
+/// Применяет вмешательство с проверкой ресурсных бюджетов до индексации и
+/// клонирования состояния. Бюджет выходного состояния учитывает структуры,
+/// контейнер и копируемые байты строк, но не является точной оценкой
+/// allocator overhead.
+pub fn apply_intervention_with_limits(
+    state: &SyntheticState,
+    intervention: &SyntheticIntervention,
+    limits: ObservationLimits,
+) -> Result<SyntheticState, ExperimentError> {
+    check_observation_limit(
+        "state_variables",
+        state.variables.len(),
+        limits.max_state_variables,
+    )?;
 
-    variable.value = variable
+    let mut input_bytes = state
+        .state_id
+        .len()
+        .checked_add(intervention.variable_key.len())
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    for variable in &state.variables {
+        input_bytes = input_bytes
+            .checked_add(variable.key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    }
+    check_observation_limit(
+        "total_input_bytes",
+        input_bytes,
+        limits.max_total_input_bytes,
+    )?;
+
+    if state.state_id.trim().is_empty() {
+        return Err(ExperimentError::EmptyStateId);
+    }
+
+    let mut state_keys = BTreeSet::new();
+    let mut target_index = None;
+    for (index, variable) in state.variables.iter().enumerate() {
+        if variable.key.trim().is_empty() {
+            return Err(ExperimentError::EmptyVariableKey);
+        }
+        if !state_keys.insert(variable.key.as_str()) {
+            return Err(ExperimentError::DuplicateVariableKey);
+        }
+        if variable.key == intervention.variable_key {
+            target_index = Some(index);
+        }
+    }
+    let target_index = target_index.ok_or(ExperimentError::MissingInterventionTarget)?;
+
+    let next_value = state.variables[target_index]
         .value
         .checked_add(intervention.delta)
         .ok_or(ExperimentError::ArithmeticOverflow)?;
-    next.step = next
+    let next_step = state
         .step
         .checked_add(1)
         .ok_or(ExperimentError::ArithmeticOverflow)?;
 
+    let key_bytes = state.variables.iter().try_fold(0_usize, |total, variable| {
+        total
+            .checked_add(variable.key.len())
+            .ok_or(ExperimentError::ObservationSizeOverflow)
+    })?;
+    let output_bytes = std::mem::size_of::<SyntheticState>()
+        .checked_add(state.state_id.len())
+        .and_then(|size| {
+            state
+                .variables
+                .len()
+                .checked_mul(std::mem::size_of::<StateVariable>())
+                .and_then(|variables| size.checked_add(variables))
+        })
+        .and_then(|size| size.checked_add(key_bytes))
+        .ok_or(ExperimentError::ObservationSizeOverflow)?;
+    check_observation_limit("output_bytes", output_bytes, limits.max_output_bytes)?;
+
+    let mut next = state.clone();
+    next.variables[target_index].value = next_value;
+    next.step = next_step;
     Ok(next)
 }
 
@@ -402,6 +467,127 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn intervention_limits_reject_large_state_before_index_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable {
+                    key: "a".to_owned(),
+                    value: 1,
+                },
+                StateVariable {
+                    key: "b".to_owned(),
+                    value: 2,
+                },
+            ],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "missing".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "state_variables",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn intervention_limits_reject_large_input_before_validation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "long-variable-key".to_owned(),
+                value: 1,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "missing".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_total_input_bytes: 4,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "total_input_bytes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn intervention_limits_bound_clone_before_allocation() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 10,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "price".to_owned(),
+            delta: 1,
+        };
+        let limits = ObservationLimits {
+            max_output_bytes: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            apply_intervention_with_limits(&state, &intervention, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "output_bytes",
+                ..
+            })
+        ));
+        assert_eq!(state.variables[0].value, 10);
+    }
+
+    #[test]
+    fn intervention_limits_are_configurable_and_preserve_state() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 10,
+            }],
+        };
+        let intervention = SyntheticIntervention {
+            variable_key: "price".to_owned(),
+            delta: 2,
+        };
+        let limits = ObservationLimits {
+            max_state_variables: usize::MAX,
+            max_visible_keys: usize::MAX,
+            max_total_input_bytes: usize::MAX,
+            max_output_bytes: usize::MAX,
+        };
+
+        let next = apply_intervention_with_limits(&state, &intervention, limits).unwrap();
+        assert_eq!(next.variables[0].value, 12);
+        assert_eq!(next.step, 2);
+        assert_eq!(state.variables[0].value, 10);
+        assert_eq!(state.step, 1);
+    }
 
     #[test]
     fn observation_limits_reject_large_state_before_index_allocation() {
