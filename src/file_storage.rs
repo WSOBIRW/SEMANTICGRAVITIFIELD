@@ -1568,11 +1568,7 @@ mod tests {
             Err(FileRecoveryStorageError::InsecureStoragePermissions)
         ));
         assert_eq!(
-            fs::metadata(&generations)
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
+            fs::metadata(&generations).unwrap().permissions().mode() & 0o777,
             0o777
         );
     }
