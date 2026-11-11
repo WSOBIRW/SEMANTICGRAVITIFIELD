@@ -1,5 +1,31 @@
 # Статус реализации SGF
 
+## Актуальный срез на 2026-11-11
+
+Этот срез имеет приоритет над историческими записями ниже, если они описывают более ранние SHA или CI runs.
+
+### PR #14 — файловое хранилище
+- HEAD: `bd35db9e5c80f0b84d3fc06030bd5fc414881f8e`; состояние OPEN, не слит.
+- CI run #373 (`42951558453`) на точном HEAD завершён SUCCESS. Linux и macOS: форматирование, Clippy и тесты PASS; cargo-audit 0.22.2, RustSec advisory gate и source/license gate также завершены успешно.
+- Получен Code Review receipt на точный SHA `bd35db9e5c`: существенных замечаний не найдено.
+- Три P2 review threads о macOS path aliases, закреплении относительного root и FIFO/symlink-safe open остаются технически исправленными ответами в PR, но inline threads пока не закрыты. Они не закрываются автоматически только по наличию ответа.
+- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет. PR не готов к слиянию до результата этой проверки и явного решения по оставшимся review threads.
+- Остаточные границы: storage root и его родительские компоненты должны быть доверенными и недоступными на запись недоверенным локальным процессам; path-based std::fs не является песочницей от локального противника с правом записи в root. GC/retention и descriptor-relative no-follow операции не реализованы. cargo-audit покрывает известные advisories, а не неизвестные уязвимости или доброкачественность зависимостей.
+
+### PR #12 — модель наблюдателя
+- HEAD: `886704f6971835809b00bb4065871c29fff5f661`; CI run #323 на точном SHA SUCCESS.
+- Code Review receipt на точный SHA `886704f697` получен; summary фиксирует отсутствие findings.
+- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет.
+- PR OPEN, не слит. Digest полных определений обеспечивает content binding, но не аутентификацию и не заменяет внешний trust anchor.
+
+### PR #13 — синтетическое ядро эксперимента
+- HEAD: `05a3248eac1e3ccb8cdbd81bd72950a5f1eeffbe`; CI run #330 на точном SHA SUCCESS, 74 теста PASS.
+- Code Review receipt на точный SHA `05a3248eac` получен; существенных замечаний не найдено.
+- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет.
+- PR OPEN, не слит; base — PR #12. Полноценный runner, treatment/control/sham, независимый контрольный измеритель и статистический verification pipeline ещё не реализованы.
+
+Ни один из PR #12, #13, #14 не включён в main. Ни один не сливается до завершения обязательных проверок безопасности и корректной интеграции зависимостей.
+
 ## Текущая версия
 
 Прототип: 0.1.0  
@@ -161,16 +187,13 @@
 
 ## Ближайшие приоритеты
 
-1. Завершить CI run #353 на точном HEAD `09cc3d4`, получить повторный Code Review и отдельный Security Review PR #14; исправить все существенные findings и повторить проверки на новом SHA.
-2. Получить повторный Code Review PR #12 на точном HEAD `3eca2ad`, отдельный Security Review и зафиксировать оба результата.
-3. Получить CI и повторный Code Review PR #13 на точном HEAD `22fe959`, а также отдельный Security Review; сохранить зависимость от принятого PR #12.
-4. После прохождения gates интегрировать PR #12, затем PR #13, повторяя проверки на итоговых SHA.
-5. Продолжить независимую проверку модели угроз файлового backend: symlink/TOCTOU, конкурентные open/writers, crash consistency и локальный противник.
-6. Сравнить file-generation backend и SQLite по требованиям, отказам и эксплуатации.
-7. Определить независимый anti-rollback trust anchor и безопасную retention/GC модель.
-8. Реализовать внутреннюю event/stream/session identity по IDENTITY_AND_TIME_MODEL.md и EVENT_SCHEMA_EVOLUTION.md.
-9. Добавить v1 fixtures, legacy adapter, opaque preservation и отдельные версии форматов с миграционными тестами.
-10. Продолжить Reconstruction, Semantic Intelligence и Independent Verification по отдельным доказательным этапам.
+1. Получить и оценить отдельные security-focused reviews PR #12, #13 и #14 на точных текущих SHA; обработать findings и повторить проверки после каждого изменения.
+2. Для PR #14 отдельно проверить модель доверия к storage root, lock-file path, hard links, generation/current path races, конкурентные writers и crash consistency. Не расширять обещания безопасности за пределы фактической модели доступа.
+3. После закрытия review gates принять PR #12 в main, затем перенаправить/интегрировать PR #13 на принятый observer foundation и повторить CI/review на итоговом SHA.
+4. После интеграции PR #12/#13 реализовать полноценный экспериментальный runner: генератор с seed, версионированную модель, скрытое состояние, treatment/control/sham, независимый контрольный измеритель, повторные прогоны, baseline, метрики и статистическую неопределённость.
+5. Сохранить provenance, машинно-читаемый манифест и независимую реализацию ключевой метрики; не трактовать синтетические результаты как доказательство реального SGF.
+6. Продолжить независимую проверку storage backend, сравнение file-generation и SQLite, проектирование anti-rollback trust anchor и безопасной retention/GC модели.
+7. Развивать event/session identity, эволюцию схем, реконструкцию, Semantic Intelligence и Independent Verification отдельными доказательными этапами.
 
 ## Правило статуса
 
