@@ -5,7 +5,7 @@
 Прототип: 0.1.0  
 Язык ядра: Rust  
 Репозиторий: WSOBIRW/SEMANTICGRAVITIFIELD  
-Последняя указанная в предыдущей ревизии база проверки кода: main, commit `c74f9d82557665c9e4fe7c786888e2dcf761942c`. Последующие изменения этого этапа затрагивают нормативную документацию; они не являются новой проверкой исполняемого кода.  
+Последняя проверенная базовая версия main на момент переноса файлового backend: commit `3a8dbdc540d9bccad8b10156475ea536ea7adf08`. Открытые PR ниже не входят в main. Все проверки привязаны к конкретному HEAD и CI run.  
 Назначение реализованного ядра: проверка входных рыночных событий, предотвращение повторов и некорректного порядка, snapshot/journal/replay и контракты долговечного восстановления.
 
 Этот документ фиксирует фактическое состояние на момент коммита. Любой CI/review результат относится только к явно указанному SHA.
@@ -65,16 +65,19 @@
 
 - Состояние: OPEN, не слит.
 - Ветка: `feat/file-generation-recovery-storage-current`, создана от актуального main, чтобы избежать diverged history исходной ветки PR #11.
-- Текущий HEAD: `cf290cac739837be223c71896d85b6cb291d96f7`.
+- Текущий HEAD: `0ae25f540221af33908ec05c8699ac1959e36f2c`.
 - Реализация файлового backend перенесена в чистую ветку. Включены Cargo.toml, Cargo.lock, src/lib.rs, src/file_storage.rs и обновление CI workflow.
 - Cargo.lock сгенерирован Cargo в успешном run #297; 21 пакет, включая платформенные зависимости Windows, с версиями и checksum. В CI Clippy и тесты теперь используют --locked. Временный экспорт lockfile как artifact удалён.
 - Run #297 на кодовом HEAD `8e734ff`: rustfmt PASS, Clippy PASS, тесты PASS; Cargo.lock artifact получен и добавлен в репозиторий.
-- CI run #314 на точном HEAD `cf290ca`: rustfmt PASS, Clippy PASS, 58 unit tests + 1 integration test PASS (59 всего). Cargo.lock и `--locked` PASS. Source/license gate проверил 21 транзитивный пакет: все источники crates.io; лицензии соответствуют allowlist MIT/Apache-2.0/BSD-3-Clause, включая точную нормализацию legacy `MIT/Apache-2.0`.
+- CI run #314 на предыдущем HEAD `cf290ca`: rustfmt PASS, Clippy PASS, 58 unit tests + 1 integration test PASS (59 всего). Cargo.lock и `--locked` PASS. Source/license gate проверил 21 транзитивный пакет: все источники crates.io; лицензии соответствуют allowlist MIT/Apache-2.0/BSD-3-Clause, включая точную нормализацию legacy `MIT/Apache-2.0`.
+- По P2 finding code review о пропущенной проверке RustSec advisory database добавлен отдельный gate: установка `cargo-audit` версии `0.22.2` с `--locked` и `cargo audit --file Cargo.lock`. Новый CI run #317 на точном HEAD `0ae25f5` выполняется; на момент обновления форматирование, Clippy и тесты прошли, установка cargo-audit выполнялась, аудит и source/license gate ещё не завершились.
+- P2 finding по отсутствию advisory scan исправлен в коде workflow, но не считается закрытым до успешного CI и повторного review на новом HEAD.
 - Реализованы конфигурируемые per-artifact и aggregate бюджеты чтения. Размеры всех файлов и исходная сумма проверяются до выделения буферов; aggregate budget повторно контролируется по фактически прочитанным байтам между последовательными чтениями, чтобы рост нескольких файлов после metadata check не обходил совокупный предел.
 - Добавлены тесты на per-file budget, aggregate budget, рост файла, bounded reader при росте после metadata check и нулевой бюджет.
-- Code Review и отдельный Security Review запрошены на точном HEAD `cf290ca`; завершённые результаты пока не подтверждены.
+- Предыдущий Code Review на HEAD `cf290ca` выявил P2: отсутствовал аудит RustSec. Исправление добавлено в `0ae25f5`; повторный Code Review запрошен на новом HEAD. Завершённого review на `0ae25f5` пока нет.
+- Отдельный Security Review не подтверждён. Проверка cargo-audit выявляет известные опубликованные advisories, но не устанавливает личность издателя, доброкачественность кода или отсутствие неизвестных уязвимостей.
 - Локальный Rust toolchain в рабочей среде отсутствует; проверки выполняются GitHub Actions.
-- Полный dependency/license/provenance audit не завершён. Cargo.lock закрепляет граф, но не подтверждает безопасность, лицензии или доверенность источников.
+- Dependency gates разделены: Cargo.lock закрепляет версии и checksums; CI проверяет разрешённые registry sources и license expressions; cargo-audit проверяет известные RustSec advisories. Ни один из этих механизмов не подтверждает личность издателя, доброкачественность кода или отсутствие неизвестных уязвимостей.
 - PR #14 не слит.
 
 ### PR #13 — Deterministic Synthetic Observer Experiment Core
@@ -85,9 +88,9 @@
 - Ветка: `feat/controlled-observer-experiment`.
 - Текущий HEAD: `22fe9597df40f714701d59dfe5d21f268f23acea`.
 - Базовая ветка PR: `feat/observer-foundation`; PR #13 зависит от PR #12 и не направлен непосредственно в main.
-- CI на точном HEAD `22fe959` не обнаружен; PASS не заявляется.
+- CI на точном HEAD `22fe959` не обнаружен; PASS не заявляется. Повторный запрос Code Review отправлен на этот SHA, но новый review receipt, подтверждающий просмотр именно этого SHA, пока не зафиксирован.
 - Предыдущие P2 исправлены: симметричный диапазон шума ограничен представимым диапазоном; квадратичные проверки заменены BTreeSet; общая часть хеша вычисляется один раз на observation.
-- Последний Code Review на точном HEAD `22fe959` завершён без findings. Три P2 предыдущего review получили исправления и ответы; inline threads разрешены.
+- Предыдущие Code Review findings получили исправления и ответы; inline threads разрешены. Наличие разрешённых старых threads не заменяет повторный review точного HEAD `22fe959`.
 - `visible_keys` определён как фильтр синтетической проекции, а не механизм авторизации; детерминированный шум явно не обеспечивает конфиденциальность или приватность.
 - В `experiment_contract.rs` 14 тестов, но они не запускались на точном HEAD после последнего изменения.
 - Отдельный Security Review не имеет подтверждённого результата.
@@ -106,7 +109,7 @@
 - Добавлена структурная валидация идентичности, версий, временного интервала и ссылок на исходные доказательства.
 - Добавлены расширяемые коды типов и явные значения Unknown для классификаций процедуры.
 - Добавлены интеграционные позитивные и негативные тесты.
-- Code Review на точном HEAD `3eca2ad` завершён без findings (`has_any_findings=false`, `has_unresolved_findings=false`). Отдельный Security Review не имеет подтверждённого результата.
+- Code Review receipt, доступный в истории PR, относится к более раннему commit `530dc07`; подтверждённого нового review receipt на точном HEAD `3eca2ad` в текущей проверке не обнаружено. Отдельный Security Review не имеет подтверждённого результата.
 - Finding по подмене определения разрешён после ответа и обновления кода; inline thread resolved. PR не сливался.
 - Структурная валидация не подтверждает истинность наблюдения, независимость наблюдателей или причинное влияние измерения.
 
@@ -156,11 +159,11 @@
 
 ## Ближайшие приоритеты
 
-1. Завершить независимое code review и отдельное security review PR #12 на точном HEAD; исправить findings и повторить проверки.
-2. Получить завершённое независимое code review PR #11 на точном HEAD; проверить новые findings, если они появятся.
-3. Реализовать минимальный синтетический стенд по CONTROLLED_OBSERVER_EXPERIMENT.md после принятия модели наблюдателя.
-4. Выполнить интеграционную проверку PR #11 относительно актуального main и повторить CI на итоговом SHA.
-5. Провести отдельную проверку модели угроз файлового backend, включая symlink/TOCTOU, конкурентные open/writers, crash consistency и локального противника.
+1. Завершить CI run #317 и повторный Code Review PR #14 на точном HEAD `0ae25f5`; затем получить отдельный Security Review и закрыть оставшиеся findings.
+2. Получить повторный Code Review PR #12 на точном HEAD `3eca2ad`, отдельный Security Review и зафиксировать оба результата.
+3. Получить CI и повторный Code Review PR #13 на точном HEAD `22fe959`, а также отдельный Security Review; сохранить зависимость от принятого PR #12.
+4. После прохождения gates интегрировать PR #12, затем PR #13, повторяя проверки на итоговых SHA.
+5. Продолжить независимую проверку модели угроз файлового backend: symlink/TOCTOU, конкурентные open/writers, crash consistency и локальный противник.
 6. Сравнить file-generation backend и SQLite по требованиям, отказам и эксплуатации.
 7. Определить независимый anti-rollback trust anchor и безопасную retention/GC модель.
 8. Реализовать внутреннюю event/stream/session identity по IDENTITY_AND_TIME_MODEL.md и EVENT_SCHEMA_EVOLUTION.md.
