@@ -1536,7 +1536,10 @@ mod tests {
             fs::metadata(&root).unwrap().permissions().mode() & 0o777,
             0o777
         );
-        assert_eq!(fs::read(root.join("CURRENT")).unwrap(), b"untrusted-pointer");
+        assert_eq!(
+            fs::read(root.join("CURRENT")).unwrap(),
+            b"untrusted-pointer"
+        );
     }
 
     #[cfg(unix)]
