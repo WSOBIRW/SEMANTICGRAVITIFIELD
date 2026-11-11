@@ -14,7 +14,8 @@ pub mod validation;
 
 pub use event::{EventPayload, MarketEvent, Quote};
 pub use experiment::{
-    apply_intervention, observe, observe_with_limits, ExperimentError, ObservationLimits,
+    apply_intervention, apply_intervention_with_limits, observe, observe_with_limits,
+    ExperimentError, ObservationLimits,
     ObservationView, ObservedVariable, StateVariable, SyntheticIntervention, SyntheticObserver,
     SyntheticState,
 };
