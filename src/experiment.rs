@@ -442,6 +442,40 @@ mod tests {
         ));
     }
 
+
+    #[test]
+    fn observation_limits_reject_large_visible_key_list() {
+        let state = SyntheticState {
+            state_id: "state".to_owned(),
+            step: 1,
+            variables: vec![
+                StateVariable { key: "a".to_owned(), value: 1 },
+                StateVariable { key: "b".to_owned(), value: 2 },
+            ],
+        };
+        let observer = SyntheticObserver {
+            observer_id: "observer".to_owned(),
+            version: 1,
+            visible_keys: vec!["a".to_owned(), "b".to_owned()],
+            resolution: 1,
+            noise_bound: 0,
+            noise_seed: 0,
+        };
+        let limits = ObservationLimits {
+            max_visible_keys: 1,
+            ..ObservationLimits::default()
+        };
+
+        assert!(matches!(
+            observe_with_limits(&state, &observer, limits),
+            Err(ExperimentError::ObservationLimitExceeded {
+                resource: "visible_keys",
+                actual: 2,
+                limit: 1
+            })
+        ));
+    }
+
     #[test]
     fn observation_limits_bound_total_input_bytes() {
         let state = SyntheticState {
