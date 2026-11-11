@@ -6,7 +6,7 @@
 
 ### PR #14 — файловое хранилище
 - HEAD: `621e670a6dcbda6f0ed11126b99fbf688300d417`; PR OPEN, не слит.
-- Последний полный успешный CI run #385 относится к предыдущему HEAD `47631b0`: Linux/macOS format, Clippy и tests PASS; cargo-audit 0.22.2, RustSec и source/license gates PASS. На текущем HEAD run #431 выполняется.
+- CI run #431 на точном HEAD `621e670a6dcbda6f0ed11126b99fbf688300d417` завершился SUCCESS: Linux format/Clippy/tests PASS (70 unit + 1 integration), cargo-audit 0.22.2, RustSec и source/license gates PASS; macOS format/Clippy/tests PASS (71 unit + 1 integration).
 - Code Review receipt на старом SHA `bd35db9` не переносится на текущий HEAD. Повторные Code Review и отдельный security-focused review на `621e670` запрошены; receipts ещё не получены.
 - Исправлены P2 по lock inode, staging directory permissions и pre-existing writable store: lock открывается no-follow/nonblocking и блокируется через `FileLock::from_file`; проверяются owner и nlink; root/generations/staging имеют 0700, новые lock/CURRENT/artifacts — 0600.
 - До чтения содержимого отклоняются существующие root/generations с group/world write; parent chain проверяется на владельца root/effective UID и отсутствие writable non-sticky компонентов. Sticky system directories допускаются. Добавлены тесты на writable root, writable generations, writable parent и сохранение исходного содержимого при отказе.
