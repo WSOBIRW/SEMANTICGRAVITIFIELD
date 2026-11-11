@@ -378,7 +378,6 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
 mod tests {
     use super::*;
 
-
     #[test]
     fn observation_limits_reject_large_state_before_index_allocation() {
         let state = SyntheticState {
@@ -455,7 +454,10 @@ mod tests {
         let state = SyntheticState {
             state_id: "state".to_owned(),
             step: 1,
-            variables: vec![StateVariable { key: "price".to_owned(), value: 1 }],
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 1,
+            }],
         };
         let observer = SyntheticObserver {
             observer_id: "observer".to_owned(),
