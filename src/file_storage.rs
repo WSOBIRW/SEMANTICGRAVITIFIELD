@@ -253,7 +253,20 @@ impl FileRecoveryStorage {
             return Err(FileRecoveryStorageError::InvalidCurrent);
         }
         // CURRENT has a fixed-size encoding. Bound the read before allocation.
-        let current_file = File::open(&current_path)?;
+        // Open with no-follow/nonblocking semantics so a path replacement cannot
+        // redirect the read to a symlink or block on a FIFO.
+        let current_file = open_regular_file_no_follow(&current_path).map_err(|error| {
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ELOOP)
+            {
+                FileRecoveryStorageError::InvalidCurrent
+            } else {
+                FileRecoveryStorageError::Io(error)
+            }
+        })?;
+        if !current_file.metadata()?.is_file() {
+            return Err(FileRecoveryStorageError::InvalidCurrent);
+        }
         let mut current_bytes = Vec::with_capacity(CURRENT_LEN + 1);
         current_file
             .take((CURRENT_LEN + 1) as u64)
@@ -575,38 +588,42 @@ enum CommitStage {
     RootDirectorySynced,
 }
 
-fn open_recovery_artifact(
-    path: &Path,
-    name: &'static str,
-) -> Result<(File, u64), FileRecoveryStorageError> {
-    // Reject known invalid entries before opening. On Unix, O_NOFOLLOW and
-    // O_NONBLOCK close the symlink/FIFO race between metadata and open:
-    // a replaced symlink fails, while a FIFO cannot block waiting for a writer.
-    let entry = fs::symlink_metadata(path)?;
-    if !entry.file_type().is_file() || entry.file_type().is_symlink() {
-        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
-    }
-
+fn open_regular_file_no_follow(path: &Path) -> io::Result<File> {
     #[cfg(unix)]
-    let file = {
+    {
         use std::os::unix::fs::OpenOptionsExt;
         OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(path)
-            .map_err(|error| {
-                if error.kind() == io::ErrorKind::NotFound
-                    || error.raw_os_error() == Some(libc::ELOOP)
-                {
-                    FileRecoveryStorageError::InvalidRecoveryArtifact(name)
-                } else {
-                    FileRecoveryStorageError::Io(error)
-                }
-            })?
-    };
+    }
 
     #[cfg(not(unix))]
-    let file = OpenOptions::new().read(true).open(path)?;
+    {
+        OpenOptions::new().read(true).open(path)
+    }
+}
+
+fn open_recovery_artifact(
+    path: &Path,
+    name: &'static str,
+) -> Result<(File, u64), FileRecoveryStorageError> {
+    // Reject known invalid entries before opening. The descriptor is then
+    // opened without following symlinks and without blocking on a FIFO.
+    let entry = fs::symlink_metadata(path)?;
+    if !entry.file_type().is_file() || entry.file_type().is_symlink() {
+        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
+    }
+
+    let file = open_regular_file_no_follow(path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound
+            || error.raw_os_error() == Some(libc::ELOOP)
+        {
+            FileRecoveryStorageError::InvalidRecoveryArtifact(name)
+        } else {
+            FileRecoveryStorageError::Io(error)
+        }
+    })?;
 
     let metadata = file.metadata()?;
     if !metadata.is_file() {
