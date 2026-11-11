@@ -52,6 +52,7 @@ pub enum FileRecoveryStorageError {
     InvalidCurrent,
     InvalidLockFile,
     InvalidGenerationDirectory,
+    InsecureStoragePermissions,
     UnreferencedGenerationExists,
     ManifestGenerationMismatch {
         pointer: u64,
@@ -76,6 +77,9 @@ impl std::fmt::Display for FileRecoveryStorageError {
             Self::InvalidLockFile => write!(f, "writer lock path is not a regular file"),
             Self::InvalidGenerationDirectory => {
                 write!(f, "invalid recovery generation directory")
+            }
+            Self::InsecureStoragePermissions => {
+                write!(f, "storage path is writable by an untrusted local user")
             }
             Self::UnreferencedGenerationExists => {
                 write!(f, "generation data exists but CURRENT pointer is missing")
@@ -209,6 +213,9 @@ impl FileRecoveryStorage {
     {
         let root = anchor_storage_root(root.as_ref())?;
         create_dir_all_synced(&root)?;
+        if let Some(parent) = root.parent() {
+            ensure_trusted_parent_chain(parent)?;
+        }
         ensure_real_directory(&root)?;
         ensure_private_directory(&root)?;
         create_dir_all_synced(&root.join("generations"))?;
@@ -807,6 +814,42 @@ fn create_private_directory(path: &Path) -> io::Result<()> {
     }
 }
 
+fn ensure_trusted_parent_chain(path: &Path) -> Result<(), FileRecoveryStorageError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let mut current = PathBuf::new();
+        for component in path.components() {
+            current.push(component);
+            let metadata = fs::symlink_metadata(&current)?;
+            if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
+            }
+
+            let owner = metadata.uid();
+            let effective_uid = unsafe { libc::geteuid() };
+            if owner != 0 && owner != effective_uid {
+                return Err(FileRecoveryStorageError::InsecureStoragePermissions);
+            }
+
+            let mode = metadata.permissions().mode();
+            let group_or_other_writable = mode & 0o022 != 0;
+            let sticky = mode & 0o1000 != 0;
+            // A root-owned sticky directory such as /tmp protects entries
+            // from deletion/replacement by other UIDs. Other writable parents
+            // are not trusted, even when the target root itself is private.
+            if group_or_other_writable && !sticky {
+                return Err(FileRecoveryStorageError::InsecureStoragePermissions);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        ensure_real_directory(path)?;
+    }
+    Ok(())
+}
+
 fn ensure_private_directory(path: &Path) -> Result<(), FileRecoveryStorageError> {
     #[cfg(unix)]
     {
@@ -817,6 +860,12 @@ fn ensure_private_directory(path: &Path) -> Result<(), FileRecoveryStorageError>
             || metadata.uid() != unsafe { libc::geteuid() }
         {
             return Err(FileRecoveryStorageError::InvalidGenerationDirectory);
+        }
+        // Do not "repair" a pre-existing directory that was writable by
+        // another UID: entries may have been planted before chmod. Reject it
+        // before reading CURRENT or trusting any generation contents.
+        if metadata.permissions().mode() & 0o022 != 0 {
+            return Err(FileRecoveryStorageError::InsecureStoragePermissions);
         }
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     }
@@ -1464,6 +1513,47 @@ mod tests {
             storage.load_current().unwrap().unwrap().manifest.generation,
             1
         );
+    }
+
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_preexisting_group_or_world_writable_root_before_chmod() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = TestDirectory::new();
+        let root = directory.path().join("writable-store");
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o777)).unwrap();
+        fs::write(root.join("CURRENT"), b"untrusted-pointer").unwrap();
+
+        let result = FileRecoveryStorage::open(&root);
+        assert!(matches!(
+            result,
+            Err(FileRecoveryStorageError::InsecureStoragePermissions)
+        ));
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o777
+        );
+        assert_eq!(fs::read(root.join("CURRENT")).unwrap(), b"untrusted-pointer");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_writable_non_sticky_parent_before_trusting_store() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = TestDirectory::new();
+        let parent = directory.path().join("writable-parent");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o777)).unwrap();
+        let root = parent.join("store");
+
+        assert!(matches!(
+            FileRecoveryStorage::open(&root),
+            Err(FileRecoveryStorageError::InsecureStoragePermissions)
+        ));
     }
 
     #[cfg(unix)]
