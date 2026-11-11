@@ -894,6 +894,19 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn nonblocking_nofollow_open_does_not_wait_on_fifo() {
+        use std::process::Command;
+
+        let directory = TestDirectory::new();
+        let fifo = directory.path().join("nonblocking.fifo");
+        assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+
+        let file = open_regular_file_no_follow(&fifo).unwrap();
+        assert!(!file.metadata().unwrap().is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn recovery_artifact_fifo_is_rejected_without_waiting_for_writer() {
         use std::process::Command;
 
