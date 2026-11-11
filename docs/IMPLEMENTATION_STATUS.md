@@ -14,7 +14,7 @@
 
 ### PR #13 — синтетическая модель наблюдения
 - HEAD: `e88df5693a5cc2cc8fcdcd94ac8d29d78e2fec37`; PR OPEN, не слит; base — PR #12.
-- CI run #391 на предыдущем HEAD `bf6c07f` завершился SUCCESS: rustfmt, Clippy и 78 тестов PASS. После него добавлены re-exports API и тест лимита visible_keys; run #394 выявил только rustfmt, исправленный в текущем HEAD. CI run #395 ожидается.
+- CI run #395 на точном HEAD завершился SUCCESS: rustfmt, Clippy и 79 тестов PASS (48 unit + 1 integration + 14 experiment contract + 16 observer integration).
 - P2 по неограниченным дополнительным allocations исправлен: ObservationLimits и observe_with_limits проверяют count/input-byte budgets до BTreeSet, output count/byte budget — до выделения Vec; индексы строятся один раз с одновременной проверкой уникальности. Значения по умолчанию конечные, но настраиваемые; они не являются пределами формата или модели.
 - Повторный Code Review и отдельный security-focused review на точном HEAD `e88df56` запрошены; receipts ещё не получены.
 
@@ -25,32 +25,6 @@
 - Digest полных определений обеспечивает content binding, но не аутентификацию. Внешний trust anchor остаётся отдельной задачей.
 
 Ни один из PR #12, #13, #14 не включён в main. Открытые PR не считаются реализованными в main.
-
-## Актуальный срез на 2026-11-11
-
-Этот срез имеет приоритет над историческими записями ниже, если они описывают более ранние SHA или CI runs.
-
-### PR #14 — файловое хранилище
-- HEAD: `bd35db9e5c80f0b84d3fc06030bd5fc414881f8e`; состояние OPEN, не слит.
-- CI run #373 (`42951558453`) на точном HEAD завершён SUCCESS. Linux и macOS: форматирование, Clippy и тесты PASS; cargo-audit 0.22.2, RustSec advisory gate и source/license gate также завершены успешно.
-- Получен Code Review receipt на точный SHA `bd35db9e5c`: существенных замечаний не найдено.
-- Три P2 review threads о macOS path aliases, закреплении относительного root и FIFO/symlink-safe open остаются технически исправленными ответами в PR, но inline threads пока не закрыты. Они не закрываются автоматически только по наличию ответа.
-- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет. PR не готов к слиянию до результата этой проверки и явного решения по оставшимся review threads.
-- Остаточные границы: storage root и его родительские компоненты должны быть доверенными и недоступными на запись недоверенным локальным процессам; path-based std::fs не является песочницей от локального противника с правом записи в root. GC/retention и descriptor-relative no-follow операции не реализованы. cargo-audit покрывает известные advisories, а не неизвестные уязвимости или доброкачественность зависимостей.
-
-### PR #12 — модель наблюдателя
-- HEAD: `886704f6971835809b00bb4065871c29fff5f661`; CI run #323 на точном SHA SUCCESS.
-- Code Review receipt на точный SHA `886704f697` получен; summary фиксирует отсутствие findings.
-- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет.
-- PR OPEN, не слит. Digest полных определений обеспечивает content binding, но не аутентификацию и не заменяет внешний trust anchor.
-
-### PR #13 — синтетическое ядро эксперимента
-- HEAD: `05a3248eac1e3ccb8cdbd81bd72950a5f1eeffbe`; CI run #330 на точном SHA SUCCESS, 74 теста PASS.
-- Code Review receipt на точный SHA `05a3248eac` получен; существенных замечаний не найдено.
-- Отдельный security-focused review на точный SHA запрошен; подтверждённого результата пока нет.
-- PR OPEN, не слит; base — PR #12. Полноценный runner, treatment/control/sham, независимый контрольный измеритель и статистический verification pipeline ещё не реализованы.
-
-Ни один из PR #12, #13, #14 не включён в main. Ни один не сливается до завершения обязательных проверок безопасности и корректной интеграции зависимостей.
 
 ## Текущая версия
 
