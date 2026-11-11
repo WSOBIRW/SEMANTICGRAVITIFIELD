@@ -76,7 +76,7 @@ pub struct SyntheticIntervention {
 pub struct ObservationLimits {
     pub max_state_variables: usize,
     pub max_visible_keys: usize,
-    pub max_total_input_key_bytes: usize,
+    pub max_total_input_bytes: usize,
     pub max_output_bytes: usize,
 }
 
@@ -85,7 +85,7 @@ impl Default for ObservationLimits {
         Self {
             max_state_variables: 100_000,
             max_visible_keys: 100_000,
-            max_total_input_key_bytes: 16 * 1024 * 1024,
+            max_total_input_bytes: 16 * 1024 * 1024,
             max_output_bytes: 16 * 1024 * 1024,
         }
     }
@@ -214,9 +214,9 @@ pub fn observe_with_limits(
             .ok_or(ExperimentError::ObservationSizeOverflow)?;
     }
     check_observation_limit(
-        "total_input_key_bytes",
+        "total_input_bytes",
         input_key_bytes,
-        limits.max_total_input_key_bytes,
+        limits.max_total_input_bytes,
     )?;
 
     state.validate()?;
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn observation_limits_bound_input_key_bytes() {
+    fn observation_limits_bound_total_input_bytes() {
         let state = SyntheticState {
             state_id: "state".to_owned(),
             step: 1,
@@ -428,14 +428,14 @@ mod tests {
             noise_seed: 0,
         };
         let limits = ObservationLimits {
-            max_total_input_key_bytes: 4,
+            max_total_input_bytes: 4,
             ..ObservationLimits::default()
         };
 
         assert!(matches!(
             observe_with_limits(&state, &observer, limits),
             Err(ExperimentError::ObservationLimitExceeded {
-                resource: "total_input_key_bytes",
+                resource: "total_input_bytes",
                 ..
             })
         ));
@@ -488,7 +488,7 @@ mod tests {
         let limits = ObservationLimits {
             max_state_variables: usize::MAX,
             max_visible_keys: usize::MAX,
-            max_total_input_key_bytes: usize::MAX,
+            max_total_input_bytes: usize::MAX,
             max_output_bytes: usize::MAX,
         };
 
