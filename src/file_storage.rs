@@ -456,7 +456,6 @@ impl FileRecoveryStorage {
     }
 }
 
-
 /// Резервирует staging и временный CURRENT без перезаписи чужих остатков.
 ///
 /// Счётчик процесса может обнулиться после рестарта. Поэтому столкновение
@@ -1017,10 +1016,7 @@ mod tests {
             .publish_with_token(package(1), token, |_| Ok(()))
             .unwrap();
 
-        assert_eq!(
-            fs::read(&stale_current_temp).unwrap(),
-            b"previous-process"
-        );
+        assert_eq!(fs::read(&stale_current_temp).unwrap(), b"previous-process");
         assert_eq!(
             storage.load_current().unwrap().unwrap().manifest.generation,
             1
