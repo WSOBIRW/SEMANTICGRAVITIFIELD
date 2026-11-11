@@ -15,9 +15,8 @@ pub mod validation;
 pub use event::{EventPayload, MarketEvent, Quote};
 pub use experiment::{
     apply_intervention, apply_intervention_with_limits, observe, observe_with_limits,
-    ExperimentError, ObservationLimits,
-    ObservationView, ObservedVariable, StateVariable, SyntheticIntervention, SyntheticObserver,
-    SyntheticState,
+    ExperimentError, ObservationLimits, ObservationView, ObservedVariable, StateVariable,
+    SyntheticIntervention, SyntheticObserver, SyntheticState,
 };
 pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
