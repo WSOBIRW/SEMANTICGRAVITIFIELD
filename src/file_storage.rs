@@ -977,50 +977,54 @@ mod tests {
     }
 
     #[test]
-    fn preexisting_staging_collision_is_not_removed() {
+    fn stale_staging_collision_retries_without_modifying_previous_path() {
         let directory = TestDirectory::new();
         let storage = FileRecoveryStorage::open(directory.path()).unwrap();
-        let token = u64::MAX;
-        let stage_dir = directory.path().join(format!(
+        let token = 0;
+        let stale_stage = directory.path().join(format!(
             ".staging-g-{:020}-p{}-{token}",
             1,
             std::process::id()
         ));
-        fs::create_dir(&stage_dir).unwrap();
-        fs::write(stage_dir.join("preserve.bin"), b"previous-process").unwrap();
+        fs::create_dir(&stale_stage).unwrap();
+        fs::write(stale_stage.join("preserve.bin"), b"previous-process").unwrap();
 
-        assert!(storage
+        storage
             .publish_with_token(package(1), token, |_| Ok(()))
-            .is_err());
+            .unwrap();
+
         assert_eq!(
-            fs::read(stage_dir.join("preserve.bin")).unwrap(),
+            fs::read(stale_stage.join("preserve.bin")).unwrap(),
             b"previous-process"
+        );
+        assert_eq!(
+            storage.load_current().unwrap().unwrap().manifest.generation,
+            1
         );
     }
 
     #[test]
-    fn preexisting_current_temp_collision_is_not_removed() {
+    fn stale_current_temp_collision_retries_without_modifying_previous_path() {
         let directory = TestDirectory::new();
         let storage = FileRecoveryStorage::open(directory.path()).unwrap();
-        let token = u64::MAX - 1;
-        let current_temp = directory
+        let token = 0;
+        let stale_current_temp = directory
             .path()
             .join(format!(".CURRENT-p{}-{token}", std::process::id()));
-        fs::write(&current_temp, b"previous-process").unwrap();
+        fs::write(&stale_current_temp, b"previous-process").unwrap();
 
-        assert!(storage
+        storage
             .publish_with_token(package(1), token, |_| Ok(()))
-            .is_err());
-        assert_eq!(fs::read(&current_temp).unwrap(), b"previous-process");
-        assert!(!storage.generation_dir(1).exists());
-        assert!(!directory
-            .path()
-            .join(format!(
-                ".staging-g-{:020}-p{}-{token}",
-                1,
-                std::process::id()
-            ))
-            .exists());
+            .unwrap();
+
+        assert_eq!(
+            fs::read(&stale_current_temp).unwrap(),
+            b"previous-process"
+        );
+        assert_eq!(
+            storage.load_current().unwrap().unwrap().manifest.generation,
+            1
+        );
     }
 
     #[cfg(unix)]
