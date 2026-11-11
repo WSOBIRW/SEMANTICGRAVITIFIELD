@@ -888,7 +888,9 @@ mod tests {
         let result = open_recovery_artifact(&fifo, "snapshot");
         assert!(matches!(
             result,
-            Err(FileRecoveryStorageError::InvalidRecoveryArtifact("snapshot"))
+            Err(FileRecoveryStorageError::InvalidRecoveryArtifact(
+                "snapshot"
+            ))
         ));
     }
 
