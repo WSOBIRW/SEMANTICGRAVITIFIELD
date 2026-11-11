@@ -616,8 +616,8 @@ fn open_recovery_artifact(
     }
 
     let file = open_regular_file_no_follow(path).map_err(|error| {
-        let invalid_path = error.kind() == io::ErrorKind::NotFound
-            || error.raw_os_error() == Some(libc::ELOOP);
+        let invalid_path =
+            error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ELOOP);
         if invalid_path {
             FileRecoveryStorageError::InvalidRecoveryArtifact(name)
         } else {
