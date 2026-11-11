@@ -1519,6 +1519,15 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn rejects_filesystem_root_as_storage_directory() {
+        assert!(matches!(
+            FileRecoveryStorage::open(Path::new("/")),
+            Err(FileRecoveryStorageError::InvalidGenerationDirectory)
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn rejects_preexisting_group_or_world_writable_root_before_chmod() {
