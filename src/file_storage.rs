@@ -786,9 +786,7 @@ fn anchor_storage_root(path: &Path) -> Result<PathBuf, FileRecoveryStorageError>
     Ok(normalize_storage_root(&normalized))
 }
 
-fn normalize_absolute_path(
-    path: &Path,
-) -> Result<PathBuf, FileRecoveryStorageError> {
+fn normalize_absolute_path(path: &Path) -> Result<PathBuf, FileRecoveryStorageError> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
