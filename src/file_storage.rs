@@ -511,6 +511,112 @@ fn reserve_publish_paths(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommitStage {
+    LayoutDirectoriesSynced,
+    StagingCreated,
+    SnapshotSynced,
+    JournalSynced,
+    ManifestSynced,
+    StagingDirectorySynced,
+    CurrentTempReserved,
+    GenerationPublished,
+    GenerationsDirectorySynced,
+    CurrentSynced,
+    CurrentPublished,
+    RootDirectorySynced,
+}
+
+fn open_recovery_artifact(
+    path: &Path,
+    name: &'static str,
+) -> Result<(File, u64), FileRecoveryStorageError> {
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(FileRecoveryStorageError::InvalidRecoveryArtifact(name));
+    }
+    Ok((file, metadata.len()))
+}
+
+fn check_artifact_limit(
+    artifact: &'static str,
+    size: u64,
+    limit: u64,
+) -> Result<(), FileRecoveryStorageError> {
+    if size > limit {
+        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+            artifact,
+            size,
+            limit,
+        });
+    }
+    Ok(())
+}
+
+fn read_bounded_artifact(
+    file: File,
+    artifact: &'static str,
+    initial_size: u64,
+    limit: u64,
+) -> Result<Vec<u8>, FileRecoveryStorageError> {
+    if initial_size > limit {
+        return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+            artifact,
+            size: initial_size,
+            limit,
+        });
+    }
+
+    let capacity = usize::try_from(initial_size)
+        .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(capacity).map_err(|error| {
+        FileRecoveryStorageError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            format!("cannot reserve recovery artifact buffer: {error}"),
+        ))
+    })?;
+
+    // Read in bounded chunks so Vec growth cannot overshoot the configured
+    // budget. Once the limit is reached, probe one byte without appending it.
+    let mut reader = file;
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let current_size = u64::try_from(bytes.len())
+            .map_err(|_| FileRecoveryStorageError::ArtifactSizeOverflow)?;
+        if current_size == limit {
+            let mut extra = [0_u8; 1];
+            if reader.read(&mut extra)? != 0 {
+                return Err(FileRecoveryStorageError::ArtifactReadLimitExceeded {
+                    artifact,
+                    size: limit.saturating_add(1),
+                    limit,
+                });
+            }
+            break;
+        }
+
+        let remaining = limit - current_size;
+        let chunk_size = remaining.min(chunk.len() as u64) as usize;
+        let read = reader.read(&mut chunk[..chunk_size])?;
+        if read == 0 {
+            break;
+        }
+
+        bytes.try_reserve_exact(read).map_err(|error| {
+            FileRecoveryStorageError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                format!("cannot grow recovery artifact buffer: {error}"),
+            ))
+        })?;
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+
+    Ok(bytes)
+}
+
+
 fn create_dir_all_synced(path: &Path) -> Result<(), FileRecoveryStorageError> {
     // Resolve and sync every ancestor, not only components created by this call.
     // A concurrent opener may observe a directory after create_dir but before
