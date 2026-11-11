@@ -241,12 +241,17 @@ fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
 }
 
 fn noise_prefix(seed: u64, observer_id: &str, state_id: &str, step: u64) -> u64 {
+    const DOMAIN: &[u8] = b"SGF/SYNTHETIC-OBSERVER-NOISE/v1\\0";
+
     let hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
+    let hash = hash_bytes(hash, DOMAIN);
+    let observer_len = (observer_id.len() as u64).to_le_bytes();
+    let hash = hash_bytes(hash, &observer_len);
     let hash = hash_bytes(hash, observer_id.as_bytes());
-    let hash = hash_bytes(hash, &[0xff]);
+    let state_len = (state_id.len() as u64).to_le_bytes();
+    let hash = hash_bytes(hash, &state_len);
     let hash = hash_bytes(hash, state_id.as_bytes());
-    let hash = hash_bytes(hash, &step.to_le_bytes());
-    hash_bytes(hash, &[0xfe])
+    hash_bytes(hash, &step.to_le_bytes())
 }
 
 fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
@@ -261,4 +266,28 @@ fn deterministic_noise(prefix: u64, key: &str, bound: u64) -> i128 {
     let bound = i128::from(bound);
     let width = bound * 2 + 1;
     i128::from(hash) % width - bound
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::noise_prefix;
+
+    #[test]
+    fn noise_prefix_separates_state_id_from_step_boundaries() {
+        // Без длины state_id эти разные пары имели одинаковую последовательность
+        // байтов: b"a" + 98_u64_le и b"ab" + 0_u64_le.
+        assert_ne!(
+            noise_prefix(7, "observer", "a", 98),
+            noise_prefix(7, "observer", "ab", 0)
+        );
+    }
+
+    #[test]
+    fn noise_prefix_is_domain_and_seed_scoped() {
+        let baseline = noise_prefix(7, "observer", "state", 1);
+        assert_ne!(baseline, noise_prefix(8, "observer", "state", 1));
+        assert_ne!(baseline, noise_prefix(7, "other", "state", 1));
+        assert_ne!(baseline, noise_prefix(7, "observer", "state", 2));
+    }
 }
