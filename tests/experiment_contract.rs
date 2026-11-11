@@ -215,7 +215,6 @@ fn observation_preserves_state_order_not_access_list_order() {
     );
 }
 
-
 #[test]
 fn projection_filter_is_not_an_authorization_boundary() {
     // SyntheticObserver is caller-controlled. The projection selects output
