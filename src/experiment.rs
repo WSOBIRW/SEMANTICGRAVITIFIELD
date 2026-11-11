@@ -241,7 +241,7 @@ fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
 }
 
 fn noise_prefix(seed: u64, observer_id: &str, state_id: &str, step: u64) -> u64 {
-    const DOMAIN: &[u8] = b"SGF/SYNTHETIC-OBSERVER-NOISE/v1\\0";
+    const DOMAIN: &[u8] = b"SGF/SYNTHETIC-OBSERVER-NOISE/v1";
 
     let hash = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
     let hash = hash_bytes(hash, DOMAIN);
