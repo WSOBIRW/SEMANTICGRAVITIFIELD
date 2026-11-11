@@ -221,7 +221,15 @@ impl FileRecoveryStorage {
         hook(CommitStage::LayoutDirectoriesSynced)?;
 
         let lock_path = root.join(".writer.lock");
-        let lock_file = open_lock_file(&lock_path)?;
+        let lock_file = open_lock_file(&lock_path).map_err(|error| {
+            if error.kind() == io::ErrorKind::InvalidInput
+                || error.kind() == io::ErrorKind::PermissionDenied
+            {
+                FileRecoveryStorageError::InvalidLockFile
+            } else {
+                FileRecoveryStorageError::Io(error)
+            }
+        })?;
         lock_file.sync_all()?;
         Ok(Self { root, read_limits })
     }
@@ -524,7 +532,15 @@ impl RecoveryStorage for FileRecoveryStorage {
     ) -> Result<(), RecoveryStorageError<Self::Error>> {
         let lock_path = self.root.join(".writer.lock");
         let lock_file = open_lock_file(&lock_path)
-            .map_err(FileRecoveryStorageError::Io)
+            .map_err(|error| {
+                if error.kind() == io::ErrorKind::InvalidInput
+                    || error.kind() == io::ErrorKind::PermissionDenied
+                {
+                    FileRecoveryStorageError::InvalidLockFile
+                } else {
+                    FileRecoveryStorageError::Io(error)
+                }
+            })
             .map_err(RecoveryStorageError::Backend)?;
         let mut lock = filelock::FileLock::from_file(lock_file);
         let _guard = lock
@@ -586,7 +602,14 @@ fn open_lock_file(path: &Path) -> io::Result<File> {
             .create(true)
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(path)?;
+            .open(path)
+            .map_err(|error| {
+                if error.raw_os_error() == Some(libc::ELOOP) {
+                    io::Error::new(io::ErrorKind::InvalidInput, "writer lock path is a symlink")
+                } else {
+                    error
+                }
+            })?;
         let metadata = file.metadata()?;
         if !metadata.is_file()
             || metadata.uid() != unsafe { libc::geteuid() }
@@ -1442,6 +1465,87 @@ mod tests {
             1
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn storage_directories_and_recovery_files_use_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = TestDirectory::new();
+        let mut storage = FileRecoveryStorage::open(directory.path()).unwrap();
+        storage.commit_generation(None, package(1)).unwrap();
+
+        assert_eq!(
+            fs::metadata(directory.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(directory.path().join("generations"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(directory.path().join(".writer.lock"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(
+                directory
+                    .path()
+                    .join("generations/g-00000000000000000001/snapshot.bin")
+            )
+            .unwrap()
+            .permissions()
+            .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_hard_linked_writer_lock_file() {
+        let directory = TestDirectory::new();
+        let lock_path = directory.path().join(".writer.lock");
+        let linked_path = directory.path().join("external-link");
+        fs::write(&lock_path, b"lock").unwrap();
+        fs::hard_link(&lock_path, &linked_path).unwrap();
+
+        assert!(matches!(
+            FileRecoveryStorage::open(directory.path()),
+            Err(FileRecoveryStorageError::InvalidLockFile)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn filelock_uses_the_already_opened_lock_inode() {
+        use std::os::unix::fs::MetadataExt;
+
+        let directory = TestDirectory::new();
+        let lock_path = directory.path().join(".writer.lock");
+        let original = open_lock_file(&lock_path).unwrap();
+        let original_inode = original.metadata().unwrap().ino();
+        let lock = filelock::FileLock::from_file(original);
+
+        let displaced = directory.path().join(".writer.lock.displaced");
+        fs::rename(&lock_path, &displaced).unwrap();
+        fs::write(&lock_path, b"replacement").unwrap();
+
+        assert_eq!(lock.file().metadata().unwrap().ino(), original_inode);
+        assert_ne!(
+            fs::metadata(&lock_path).unwrap().ino(),
+            original_inode
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn rejects_symlinked_writer_lock_file() {
