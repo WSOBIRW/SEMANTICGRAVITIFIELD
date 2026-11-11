@@ -486,7 +486,10 @@ mod tests {
         let state = SyntheticState {
             state_id: "state".to_owned(),
             step: 1,
-            variables: vec![StateVariable { key: "price".to_owned(), value: 1 }],
+            variables: vec![StateVariable {
+                key: "price".to_owned(),
+                value: 1,
+            }],
         };
         let observer = SyntheticObserver {
             observer_id: "observer".to_owned(),
