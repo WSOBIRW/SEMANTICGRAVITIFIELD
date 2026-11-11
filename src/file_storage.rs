@@ -1537,7 +1537,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn rejects_lexical_aliases_of_filesystem_root() {
         assert!(matches!(
