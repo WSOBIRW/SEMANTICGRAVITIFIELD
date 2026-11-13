@@ -156,7 +156,13 @@ pub fn normalize_ticker(
     received_time_ms: i64,
     raw_payload: &str,
 ) -> Result<MexcObservation, MexcError> {
-    validate_common(spec, &frame.symbol, frame.timestamp_ms, received_time_ms, raw_payload)?;
+    validate_common(
+        spec,
+        &frame.symbol,
+        frame.timestamp_ms,
+        received_time_ms,
+        raw_payload,
+    )?;
 
     let bid_ticks = parse_scaled_i64(&frame.bid1, spec.price_scale_factor)?;
     let ask_ticks = parse_scaled_i64(&frame.ask1, spec.price_scale_factor)?;
@@ -249,10 +255,7 @@ pub fn normalize_deal(
         other => return Err(MexcError::InvalidSelfTradeFlag(other)),
     };
 
-    if frame
-        .matching_engine_time_ms
-        .is_some_and(|time| time < 0)
-    {
+    if frame.matching_engine_time_ms.is_some_and(|time| time < 0) {
         return Err(MexcError::InvalidTimestamp);
     }
 
@@ -359,7 +362,9 @@ fn parse_scaled_u64(value: &str, scale: u64) -> Result<u64, MexcError> {
         fractional.push('0');
     }
 
-    let whole_value = whole.parse::<u64>().map_err(|_| MexcError::NumericOverflow)?;
+    let whole_value = whole
+        .parse::<u64>()
+        .map_err(|_| MexcError::NumericOverflow)?;
     let fractional_value = if fractional.is_empty() {
         0
     } else {
@@ -417,8 +422,8 @@ mod tests {
 
     #[test]
     fn normalizes_ticker_to_integer_quote_without_float_conversion() {
-        let result = normalize_ticker(&spec(), &ticker(), 1_005, r#"{"channel":"push.ticker"}"#)
-            .unwrap();
+        let result =
+            normalize_ticker(&spec(), &ticker(), 1_005, r#"{"channel":"push.ticker"}"#).unwrap();
 
         assert_eq!(result.event.source_id, "mexc-futures-ws");
         assert_eq!(result.event.instrument_id, "BTC_USDT");
@@ -442,8 +447,7 @@ mod tests {
 
     #[test]
     fn normalizes_deal_and_preserves_exchange_trade_metadata() {
-        let result = normalize_deal(&spec(), &deal(), 1_105, r#"{"channel":"push.deal"}"#)
-            .unwrap();
+        let result = normalize_deal(&spec(), &deal(), 1_105, r#"{"channel":"push.deal"}"#).unwrap();
 
         assert_eq!(result.event.event_id, "mexc:BTC_USDT:deal:tx-100");
         assert_eq!(
