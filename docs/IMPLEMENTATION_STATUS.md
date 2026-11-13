@@ -6,19 +6,20 @@
 
 Главная цель SEMANTICGRAVITIFIELD — получение реальной экономической прибыли. Первая и текущая область реализации — исследование торговых возможностей. Канонические формулировки находятся в PURPOSE.md и ARCHITECTURE.md; последовательность работ — в ROADMAP.md.
 
-### PR #15 — исследовательское ядро и MEXC нормализатор
+### PR #15 — исследовательское ядро и приём MEXC capture
 
 - Ветка: `implementation/market-research-core`.
-- Текущий HEAD: `cc1385df62eff70c49136ad8aaa4de4471ebea32`.
+- Текущий HEAD: `509a5eb153c80c3b80a5de702bdc8d2e403d2631`.
 - PR #15 открыт, не слит; изменения не входят в main.
 - `src/research.rs`: детерминированный анализ упорядоченного окна Quote/Trade одного инструмента, расчёт движения цены, спреда, количества событий и объёма, выделение кандидата по явным параметрам.
 - Исследовательское окно отклоняет смешение инструментов, источников и ценовых шкал, нарушение порядка времени и неподдерживаемую версию схемы.
 - `src/economic.rs`: предварительная оценка условного round-trip по bid/ask. Long: вход по ask и выход по bid. Short: вход по bid и выход по ask.
 - Комиссии и проскальзывание входа/выхода задаются раздельно. Exit costs консервативно приводятся к notional входа с округлением вверх. Funding cashflow задаётся явно.
-- `src/mexc.rs`: типизированная нормализация декодированных MEXC Futures ticker/deal кадров. Цены и объёмы преобразуются в целые fixed-point значения без f64; проверяются priceUnit и volUnit. Сохраняются сторона сделки, действие позиции, self-trade, transaction ID, matching-engine timestamp и SHA-256 исходного кадра.
-- MEXC модуль пока не является WebSocket-клиентом. Подключение, подписки, heartbeat, reconnect, получение актуальной contract metadata/funding и долговременное хранение исходных кадров ещё не реализованы.
-- Экономическая оценка пока является top-of-book приближением, а не завершённым backtest. Не моделируются глубина стакана, очередь, задержка, размер позиции, contractSize в расчёте PnL, ликвидация и фактические funding settlements.
-- CI run #505 на HEAD `612a62a8756c6b7d89a865613cffd79b90246863` прошёл: rustfmt PASS, Clippy PASS, 78 unit tests PASS и 1 integration test PASS. После уточнения семантики MEXC T как trade_side (без предположения, что это aggressor side) CI run #509 на HEAD `6b89e7bdcce62f151fb382a59e172ace11c8885a` прошёл: rustfmt PASS, Clippy PASS, 78 unit tests PASS и 1 integration test PASS. Добавлены JSON-команды подписки/unsubscribe на ticker и deal с `compress:false`, а также ping. CI run #515 на точном HEAD `cc1385df62eff70c49136ad8aaa4de4471ebea32` завершился SUCCESS: rustfmt PASS, Clippy PASS, 80 unit tests PASS и 1 integration test PASS.
+- `src/mexc.rs`: типизированная нормализация декодированных MEXC Futures ticker/deal кадров. Цены и объёмы преобразуются в целые fixed-point значения без f64; проверяются priceUnit и volUnit. Сохраняются trade side, действие позиции, self-trade, transaction ID, matching-engine timestamp и SHA-256 исходного кадра.
+- `src/mexc_capture.rs`: потоковый читатель JSONL capture-формата TRADINGCORE. Он восстанавливает top-of-book по depth snapshot/delta, проверяет последовательность depth version, нормализует deal frames, сохраняет связь с исходным кадром через SHA-256 и сортирует конечный набор по exchange event time.
+- SGF не дублирует MEXC WebSocket transport. Сбор, heartbeat, reconnect и исходные кадры остаются у источника данных TRADINGCORE; SGF принимает capture и независимо проводит исследование.
+- Экономическая оценка пока является top-of-book приближением, а не завершённым backtest. Не моделируются глубина стакана для размера позиции, очередь, задержка исполнения, contractSize в расчёте PnL, ликвидация и фактические funding settlements.
+- CI run #554 на точном HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` завершился SUCCESS: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS.
 - Локальная сборка в этой рабочей среде не выполнялась: Rust toolchain недоступен.
 
 ## Исторический срез на 2026-11-11
