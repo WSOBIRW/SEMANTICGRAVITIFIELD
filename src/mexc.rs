@@ -33,10 +33,7 @@ impl MexcContractSpec {
     ) -> Result<Self, MexcError> {
         let symbol = symbol.into();
         let contract_size = contract_size.into();
-        if symbol.trim().is_empty()
-            || symbol.trim() != symbol
-            || contract_size.trim().is_empty()
-        {
+        if symbol.trim().is_empty() || symbol.trim() != symbol || contract_size.trim().is_empty() {
             return Err(MexcError::InvalidContractSpec);
         }
 
@@ -222,7 +219,13 @@ pub fn normalize_deal(
     received_time_ms: i64,
     raw_payload: &str,
 ) -> Result<MexcObservation, MexcError> {
-    validate_common(spec, &frame.symbol, frame.timestamp_ms, received_time_ms, raw_payload)?;
+    validate_common(
+        spec,
+        &frame.symbol,
+        frame.timestamp_ms,
+        received_time_ms,
+        raw_payload,
+    )?;
 
     if frame.transaction_id.trim().is_empty() {
         return Err(MexcError::EmptyTransactionId);
@@ -474,12 +477,9 @@ mod tests {
         assert_eq!(result.volume_scale_factor, 100);
     }
 
-
     #[test]
     fn supports_volume_precision_above_price_scale_limit() {
-        let spec =
-            MexcContractSpec::new("BTC_USDT", 2, 10, "0.01", "0.0000000001", "0.001")
-                .unwrap();
+        let spec = MexcContractSpec::new("BTC_USDT", 2, 10, "0.01", "0.0000000001", "0.001").unwrap();
         let mut frame = deal();
         frame.volume = "1.0000000001".to_owned();
 
