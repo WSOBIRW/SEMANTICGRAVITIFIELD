@@ -24,6 +24,7 @@ pub use journal::{
 pub use mexc::{
     normalize_deal, normalize_ticker, MexcContractSpec, MexcDealFrame, MexcError, MexcObservation,
     MexcObservationMetadata, MexcPositionAction, MexcTickerFrame, MexcTradeSide,
+    MEXC_FUTURES_WS_JSON_ENDPOINT, MEXC_FUTURES_WS_PING_JSON,
 };
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
 pub use recovery::{
