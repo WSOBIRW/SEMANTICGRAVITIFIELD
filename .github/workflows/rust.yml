@@ -34,6 +34,29 @@ jobs:
       - name: Проверить форматирование
         run: cargo fmt --all -- --check
       - name: Проверить Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Запустить тесты
-        run: cargo test --all-targets --all-features
+        run: cargo test --locked --all-targets --all-features
+      - name: Установить cargo-audit
+        run: cargo install --locked cargo-audit --version 0.22.2
+      - name: Проверить известные уязвимости зависимостей
+        run: cargo audit --file Cargo.lock
+      - name: Проверить источники и лицензии зависимостей
+        shell: bash
+        run: |
+          cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          jq -r '.packages[] | select(.source != null) | [.name, .version, (.license // "MISSING"), .source] | @tsv' "$RUNNER_TEMP/cargo-metadata.json"
+          jq -e '
+            [.packages[] | select(.source != null)] as $packages
+            | ($packages | length > 0)
+            and all($packages[];
+              .source == "registry+https://github.com/rust-lang/crates.io-index"
+              and (.license != null)
+              and (
+                .license
+                | if . == "MIT/Apache-2.0" or . == "Apache-2.0/MIT" then "MIT OR Apache-2.0" else . end
+                | split(" OR ")
+                | all(.[]; . == "MIT" or . == "Apache-2.0" or . == "BSD-3-Clause")
+              )
+            )
+          ' "$RUNNER_TEMP/cargo-metadata.json" > /dev/null

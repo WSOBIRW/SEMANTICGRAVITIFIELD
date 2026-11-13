@@ -2,7 +2,7 @@
 name = "semantic-gravity-field"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.71"
 description = "Независимое ядро проверки рыночных событий и предотвращения ошибок SGF"
 license = "UNLICENSED"
 
@@ -12,5 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 sha2 = "0.10"
+filelock = "=0.7.0"
+libc = "=0.2.191"
 
 [dev-dependencies]

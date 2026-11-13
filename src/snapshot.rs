@@ -161,7 +161,8 @@ impl EventValidator {
         }
 
         let stream_count = reader.count()?;
-        let mut last_sequences = std::collections::HashMap::with_capacity(stream_count);
+        // stream_count comes from untrusted bytes. Grow only as validated entries are decoded.
+        let mut last_sequences = std::collections::HashMap::new();
         let mut previous_key: Option<(String, String)> = None;
 
         for _ in 0..stream_count {
