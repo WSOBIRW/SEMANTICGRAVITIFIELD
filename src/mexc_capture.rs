@@ -693,7 +693,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn iterator_emits_events_incrementally_in_capture_order() {
         let mut reader = MexcCaptureReader::new(Cursor::new(capture_lines(11)));
@@ -703,10 +702,7 @@ mod tests {
 
         let second = reader.next().unwrap().unwrap();
         assert_eq!(second.event.event_time_ms, 1_004);
-        assert!(matches!(
-            second.event.payload,
-            EventPayload::Trade { .. }
-        ));
+        assert!(matches!(second.event.payload, EventPayload::Trade { .. }));
     }
 
     #[test]
