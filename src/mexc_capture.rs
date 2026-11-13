@@ -830,6 +830,51 @@ mod tests {
             + "\n"
     }
 
+
+    #[test]
+    fn rejects_delta_book_growth_over_configured_level_budget() {
+        let spec = MexcContractSpec::from_steps("BTC_USDT", "0.01", "0.01", "0.001").unwrap();
+        let mut side = BTreeMap::new();
+        let updates = json!([
+            {"price_ticks": 10_000, "quantity_lots": 100},
+            {"price_ticks": 10_001, "quantity_lots": 100}
+        ]);
+        assert_eq!(
+            apply_delta_levels(&mut side, &updates, &spec, 1),
+            Err(MexcCaptureError::TooManyLevels)
+        );
+    }
+
+    #[test]
+    fn rejects_trade_frames_over_configured_trade_budget() {
+        let spec = MexcContractSpec::from_steps("BTC_USDT", "0.01", "0.01", "0.001").unwrap();
+        let mut reader = MexcCaptureReader::new(Cursor::new(""));
+        reader.symbol = Some(spec.symbol.clone());
+        reader.capture_id = Some(900);
+        reader.spec = Some(spec);
+        reader.limits.max_trades_per_frame = 1;
+        let trade = json!({
+            "price_ticks": 10_000,
+            "quantity_lots": 100,
+            "side": "Buy",
+            "position_effect": "Open",
+            "self_trade": "No",
+            "transaction_id": "tx-1",
+            "trade_time_ms": 1_000,
+            "matching_engine_time_ms": 1_000
+        });
+        let record = json!({
+            "symbol": "BTC_USDT",
+            "captured_at_ms": 1_001,
+            "raw_payload": "{}",
+            "trades": [trade.clone(), trade]
+        });
+        assert_eq!(
+            reader.process_deal_frame(&record),
+            Err(MexcCaptureError::TooManyTrades)
+        );
+    }
+
     #[test]
     fn rejects_capture_lines_over_configured_byte_budget() {
         let limits = MexcCaptureLimits {
