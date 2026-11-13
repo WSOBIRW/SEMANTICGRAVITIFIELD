@@ -421,7 +421,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn rounds_spread_up_before_applying_maximum_threshold() {
         let events = vec![
