@@ -104,7 +104,9 @@ pub struct MexcTickerFrame {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MexcDealFrame {
     pub symbol: String,
-    pub transaction_id: String,
+    pub transaction_id: Option<String>,
+    /// Позиция сделки внутри исходного deal-кадра; нужна для локального ID.
+    pub event_index: u32,
     pub price: String,
     pub volume: String,
     pub trade_type: u64,
@@ -145,7 +147,8 @@ pub enum MexcObservationMetadata {
         trade_side: MexcTradeSide,
         position_action: MexcPositionAction,
         self_trade: MexcSelfTradeFlag,
-        transaction_id: String,
+        transaction_id: Option<String>,
+        local_event_index: Option<u32>,
         trade_time_ms: i64,
         matching_engine_time_ms: Option<i64>,
     },
@@ -167,7 +170,6 @@ pub struct MexcObservation {
 pub enum MexcError {
     InvalidContractSpec,
     SymbolMismatch,
-    EmptyTransactionId,
     EmptyRawPayload,
     InvalidTimestamp,
     InvalidDecimal,
@@ -262,10 +264,6 @@ pub fn normalize_deal(
         raw_payload,
     )?;
 
-    if frame.transaction_id.trim().is_empty() {
-        return Err(MexcError::EmptyTransactionId);
-    }
-
     let price_ticks = parse_scaled_i64(&frame.price, spec.price_scale_factor)?;
     let quantity_lots = parse_scaled_u64(&frame.volume, spec.volume_scale_factor)?;
 
@@ -302,7 +300,21 @@ pub fn normalize_deal(
 
     let digest = Sha256::digest(raw_payload.as_bytes());
     let raw_payload_sha256: [u8; 32] = digest.into();
-    let event_id = format!("mexc:{}:deal:{}", spec.symbol, frame.transaction_id);
+    let transaction_id = frame
+        .transaction_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned);
+    let event_id = match transaction_id.as_deref() {
+        Some(id) => format!("mexc:{}:deal:{}", spec.symbol, id),
+        None => format!(
+            "mexc:{}:deal:local:{}:{}:{}",
+            spec.symbol,
+            frame.timestamp_ms,
+            frame.event_index,
+            hex_digest(&raw_payload_sha256)
+        ),
+    };
 
     let event = MarketEvent {
         schema_version: 1,
@@ -325,7 +337,8 @@ pub fn normalize_deal(
             trade_side,
             position_action,
             self_trade,
-            transaction_id: frame.transaction_id.clone(),
+            transaction_id: transaction_id.clone(),
+            local_event_index: transaction_id.is_none().then_some(frame.event_index),
             trade_time_ms: frame.timestamp_ms,
             matching_engine_time_ms: frame.matching_engine_time_ms,
         },
@@ -468,7 +481,8 @@ mod tests {
     fn deal() -> MexcDealFrame {
         MexcDealFrame {
             symbol: "BTC_USDT".to_owned(),
-            transaction_id: "tx-100".to_owned(),
+            transaction_id: Some("tx-100".to_owned()),
+            event_index: 0,
             price: "100.02".to_owned(),
             volume: "2.50".to_owned(),
             trade_type: 1,
@@ -504,6 +518,32 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn creates_stable_local_event_id_when_exchange_id_is_absent() {
+        let mut frame = deal();
+        frame.transaction_id = None;
+        let raw = r#"{"channel":"push.deal","data":[{"p":"100.02","v":"2.50"}]}"#;
+
+        let first = normalize_deal(&spec(), &frame, 1_105, raw).unwrap();
+        let second = normalize_deal(&spec(), &frame, 1_105, raw).unwrap();
+
+        assert_eq!(first.event.event_id, second.event.event_id);
+        assert!(first.event.event_id.contains(":local:1100:0:"));
+        assert_eq!(
+            first.metadata,
+            MexcObservationMetadata::Trade {
+                trade_side: MexcTradeSide::Buy,
+                position_action: MexcPositionAction::Open,
+                self_trade: MexcSelfTradeFlag::No,
+                transaction_id: None,
+                local_event_index: Some(0),
+                trade_time_ms: 1_100,
+                matching_engine_time_ms: Some(1_099),
+            }
+        );
+    }
+
     #[test]
     fn normalizes_deal_and_preserves_exchange_trade_metadata() {
         let result = normalize_deal(&spec(), &deal(), 1_105, r#"{"channel":"push.deal"}"#).unwrap();
@@ -523,7 +563,8 @@ mod tests {
                 trade_side: MexcTradeSide::Buy,
                 position_action: MexcPositionAction::Open,
                 self_trade: MexcSelfTradeFlag::No,
-                transaction_id: "tx-100".to_owned(),
+                transaction_id: Some("tx-100".to_owned()),
+                local_event_index: None,
                 trade_time_ms: 1_100,
                 matching_engine_time_ms: Some(1_099),
             }
