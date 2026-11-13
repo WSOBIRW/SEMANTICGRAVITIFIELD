@@ -479,7 +479,8 @@ mod tests {
 
     #[test]
     fn supports_volume_precision_above_price_scale_limit() {
-        let spec = MexcContractSpec::new("BTC_USDT", 2, 10, "0.01", "0.0000000001", "0.001").unwrap();
+        let spec =
+            MexcContractSpec::new("BTC_USDT", 2, 10, "0.01", "0.0000000001", "0.001").unwrap();
         let mut frame = deal();
         frame.volume = "1.0000000001".to_owned();
 
