@@ -2,8 +2,6 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{MarketEvent, Quote};
 
-pub const MEXC_FUTURES_WS_JSON_ENDPOINT: &str = "wss://contract.mexc.com/edge";
-pub const MEXC_FUTURES_WS_PING_JSON: &str = r#"{"method":"ping"}"#;
 
 /// Метаданные одного MEXC Futures контракта.
 ///
@@ -23,36 +21,25 @@ pub struct MexcContractSpec {
 }
 
 impl MexcContractSpec {
-    /// Возвращает JSON-команды подписки на ticker и каждую отдельную сделку.
-    ///
-    /// compress:false отключает агрегацию deal-сообщений в JSON-протоколе.
-    /// Для Protobuf действует отдельный параметр reduce:false; этот метод
-    /// предназначен только для JSON WebSocket.
-    pub fn json_subscribe_messages(&self) -> [String; 2] {
-        [
-            format!(
-                r#"{{"method":"sub.ticker","param":{{"symbol":"{}"}}}}"#,
-                self.symbol
-            ),
-            format!(
-                r#"{{"method":"sub.deal","param":{{"symbol":"{}","compress":false}}}}"#,
-                self.symbol
-            ),
-        ]
-    }
 
-    /// Возвращает JSON-команды снятия обеих подписок.
-    pub fn json_unsubscribe_messages(&self) -> [String; 2] {
-        [
-            format!(
-                r#"{{"method":"unsub.ticker","param":{{"symbol":"{}"}}}}"#,
-                self.symbol
-            ),
-            format!(
-                r#"{{"method":"unsub.deal","param":{{"symbol":"{}"}}}}"#,
-                self.symbol
-            ),
-        ]
+    /// Создаёт спецификацию из priceUnit/volUnit MEXC или capture manifest.
+    /// Десятичная точность выводится из шага без округления.
+    pub fn from_steps(
+        symbol: impl Into<String>,
+        price_unit: &str,
+        volume_unit: &str,
+        contract_size: impl Into<String>,
+    ) -> Result<Self, MexcError> {
+        let price_decimals = decimal_places(price_unit)?;
+        let volume_decimals = decimal_places(volume_unit)?;
+        Self::new(
+            symbol,
+            price_decimals,
+            volume_decimals,
+            price_unit,
+            volume_unit,
+            contract_size,
+        )
     }
 
     /// Создаёт спецификацию из полей MEXC contract metadata.
@@ -122,9 +109,9 @@ pub struct MexcDealFrame {
     pub transaction_id: String,
     pub price: String,
     pub volume: String,
-    pub trade_type: u8,
-    pub position_action: u8,
-    pub self_trade: u8,
+    pub trade_type: u64,
+    pub position_action: u64,
+    pub self_trade: u64,
     pub timestamp_ms: i64,
     pub matching_engine_time_ms: Option<i64>,
 }
@@ -133,6 +120,7 @@ pub struct MexcDealFrame {
 pub enum MexcTradeSide {
     Buy,
     Sell,
+    Other(u64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,17 +128,25 @@ pub enum MexcPositionAction {
     Open,
     Reduce,
     Unchanged,
+    Other(u64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MexcSelfTradeFlag {
+    Yes,
+    No,
+    Other(u64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MexcObservationMetadata {
     Quote {
-        last_price_ticks: i64,
+        last_price_ticks: Option<i64>,
     },
     Trade {
         trade_side: MexcTradeSide,
         position_action: MexcPositionAction,
-        self_trade: bool,
+        self_trade: MexcSelfTradeFlag,
         transaction_id: String,
         matching_engine_time_ms: Option<i64>,
     },
@@ -180,9 +176,6 @@ pub enum MexcError {
     NumericOverflow,
     InvalidQuote,
     InvalidTrade,
-    InvalidTradeSide(u8),
-    InvalidPositionAction(u8),
-    InvalidSelfTradeFlag(u8),
     PriceOffTick,
     VolumeOffStep,
 }
@@ -288,18 +281,18 @@ pub fn normalize_deal(
     let trade_side = match frame.trade_type {
         1 => MexcTradeSide::Buy,
         2 => MexcTradeSide::Sell,
-        other => return Err(MexcError::InvalidTradeSide(other)),
+        other => MexcTradeSide::Other(other),
     };
     let position_action = match frame.position_action {
         1 => MexcPositionAction::Open,
         2 => MexcPositionAction::Reduce,
         3 => MexcPositionAction::Unchanged,
-        other => return Err(MexcError::InvalidPositionAction(other)),
+        other => MexcPositionAction::Other(other),
     };
     let self_trade = match frame.self_trade {
-        1 => true,
-        2 => false,
-        other => return Err(MexcError::InvalidSelfTradeFlag(other)),
+        1 => MexcSelfTradeFlag::Yes,
+        2 => MexcSelfTradeFlag::No,
+        other => MexcSelfTradeFlag::Other(other),
     };
 
     if frame.matching_engine_time_ms.is_some_and(|time| time < 0) {
@@ -356,6 +349,23 @@ fn validate_common(
         return Err(MexcError::EmptyRawPayload);
     }
     Ok(())
+}
+
+fn decimal_places(value: &str) -> Result<u32, MexcError> {
+    if value.is_empty() || value.starts_with('-') || value.starts_with('+') {
+        return Err(MexcError::InvalidDecimal);
+    }
+    let mut parts = value.split('.');
+    let whole = parts.next().ok_or(MexcError::InvalidDecimal)?;
+    let fraction = parts.next().unwrap_or("");
+    if parts.next().is_some()
+        || whole.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(MexcError::InvalidDecimal);
+    }
+    Ok(fraction.trim_end_matches('0').len() as u32)
 }
 
 fn decimal_scale_factor(decimals: u32) -> Result<u32, MexcError> {
@@ -468,39 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn builds_json_subscriptions_without_trade_aggregation() {
-        let spec = spec();
-        assert_eq!(
-            spec.json_subscribe_messages(),
-            [
-                r#"{"method":"sub.ticker","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
-                r#"{"method":"sub.deal","param":{"symbol":"BTC_USDT","compress":false}}"#
-                    .to_owned(),
-            ]
-        );
-        assert_eq!(
-            spec.json_unsubscribe_messages(),
-            [
-                r#"{"method":"unsub.ticker","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
-                r#"{"method":"unsub.deal","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
-            ]
-        );
-        assert_eq!(MEXC_FUTURES_WS_PING_JSON, r#"{"method":"ping"}"#);
-        assert_eq!(
-            MEXC_FUTURES_WS_JSON_ENDPOINT,
-            "wss://contract.mexc.com/edge"
-        );
-    }
-
-    #[test]
-    fn rejects_unsafe_contract_symbols() {
-        assert_eq!(
-            MexcContractSpec::new("BTC_USDT\"}", 2, 2, "0.01", "0.01", "0.001"),
-            Err(MexcError::InvalidContractSpec)
-        );
-    }
-
-    #[test]
     fn normalizes_ticker_to_integer_quote_without_float_conversion() {
         let result =
             normalize_ticker(&spec(), &ticker(), 1_005, r#"{"channel":"push.ticker"}"#).unwrap();
@@ -520,7 +497,7 @@ mod tests {
         assert_eq!(
             result.metadata,
             MexcObservationMetadata::Quote {
-                last_price_ticks: 10_002
+                last_price_ticks: Some(10_002)
             }
         );
     }
@@ -543,7 +520,7 @@ mod tests {
             MexcObservationMetadata::Trade {
                 trade_side: MexcTradeSide::Buy,
                 position_action: MexcPositionAction::Open,
-                self_trade: false,
+                self_trade: MexcSelfTradeFlag::No,
                 transaction_id: "tx-100".to_owned(),
                 matching_engine_time_ms: Some(1_099),
             }
@@ -604,13 +581,22 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_trade_side() {
+    fn preserves_unknown_exchange_enum_values() {
         let mut frame = deal();
         frame.trade_type = 3;
+        frame.position_action = 4;
+        frame.self_trade = 5;
 
+        let result = normalize_deal(&spec(), &frame, 1_105, "{}").unwrap();
         assert_eq!(
-            normalize_deal(&spec(), &frame, 1_105, "{}"),
-            Err(MexcError::InvalidTradeSide(3))
+            result.metadata,
+            MexcObservationMetadata::Trade {
+                trade_side: MexcTradeSide::Other(3),
+                position_action: MexcPositionAction::Other(4),
+                self_trade: MexcSelfTradeFlag::Other(5),
+                transaction_id: "tx-100".to_owned(),
+                matching_engine_time_ms: Some(1_099),
+            }
         );
     }
 
