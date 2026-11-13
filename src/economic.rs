@@ -280,7 +280,11 @@ mod tests {
         OpportunityCandidate {
             instrument_id: "BTC_USDT".to_owned(),
             direction,
-            movement_bps: 100,
+            movement_bps: if direction == PriceDirection::Down {
+                -100
+            } else {
+                100
+            },
             maximum_observed_spread_bps: 2,
             start_time_ms: 1_000,
             end_time_ms: 2_000,
@@ -348,8 +352,8 @@ mod tests {
         let result = evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
 
         assert_eq!(result.funding_cost_bps, -3);
-        assert_eq!(result.net_return_bps, -3);
-        assert_eq!(result.verdict, EconomicVerdict::Negative);
+        assert_eq!(result.net_return_bps, 3);
+        assert_eq!(result.verdict, EconomicVerdict::Positive);
     }
 
     #[test]
