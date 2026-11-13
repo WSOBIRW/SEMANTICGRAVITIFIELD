@@ -6,8 +6,8 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{EventPayload, MarketEvent, Quote};
 use crate::mexc::{
-    MexcContractSpec, MexcObservation, MexcObservationMetadata, MexcPositionAction,
-    MexcSelfTradeFlag, MexcTradeSide, parse_scaled_i64, parse_scaled_u64,
+    parse_scaled_i64, parse_scaled_u64, MexcContractSpec, MexcObservation,
+    MexcObservationMetadata, MexcPositionAction, MexcSelfTradeFlag, MexcTradeSide,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,12 +78,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
         if self.spec.is_none() {
             return Err(MexcCaptureError::MissingContractSpec);
         }
-        observations.sort_by_key(|item| {
-            (
-                item.event.event_time_ms,
-                item.event.received_time_ms,
-            )
-        });
+        observations.sort_by_key(|item| (item.event.event_time_ms, item.event.received_time_ms));
         Ok(observations)
     }
 
@@ -119,13 +114,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let quantity_step = string_field(record, "quantity_step")?;
         let contract_size = string_field(record, "contract_size")?;
 
-        let spec = MexcContractSpec::from_steps(
-            symbol.clone(),
-            price_tick,
-            quantity_step,
-            contract_size,
-        )
-        .map_err(|_| MexcCaptureError::InvalidContractValue)?;
+        let spec =
+            MexcContractSpec::from_steps(symbol.clone(), price_tick, quantity_step, contract_size)
+                .map_err(|_| MexcCaptureError::InvalidContractValue)?;
 
         let capture_id = i64_field(record, "initialized_at_ms")?;
         if capture_id < 0 {
@@ -150,8 +141,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let captured_at_ms = i64_field(record, "captured_at_ms")?;
         let server_time_ms = optional_i64(record.get("server_time_ms"));
         let raw_payload = string_field(record, "raw_payload")?;
-        let raw: Value =
-            serde_json::from_str(raw_payload).map_err(|_| MexcCaptureError::InvalidDepthSnapshot)?;
+        let raw: Value = serde_json::from_str(raw_payload)
+            .map_err(|_| MexcCaptureError::InvalidDepthSnapshot)?;
         let data = raw
             .get("data")
             .and_then(Value::as_object)
@@ -170,7 +161,11 @@ impl<R: BufRead> MexcCaptureReader<R> {
             data.get("asks").ok_or(MexcCaptureError::MissingField)?,
             spec,
         )?;
-        self.book = DepthBook { bids, asks, version: Some(record_version) };
+        self.book = DepthBook {
+            bids,
+            asks,
+            version: Some(record_version),
+        };
         let (bid, ask) = best_prices(&self.book)?;
         let event_time_ms = server_time_ms.unwrap_or(captured_at_ms);
         if event_time_ms < 0 || captured_at_ms < 0 {
@@ -193,7 +188,10 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_depth_delta(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
-        let spec = self.spec.as_ref().ok_or(MexcCaptureError::MissingContractSpec)?;
+        let spec = self
+            .spec
+            .as_ref()
+            .ok_or(MexcCaptureError::MissingContractSpec)?;
         let symbol = string_field(record, "symbol")?;
         self.check_symbol(symbol)?;
 
@@ -247,7 +245,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
-            self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+            self.capture_id
+                .ok_or(MexcCaptureError::MissingContractSpec)?,
             symbol,
             version,
             bid,
