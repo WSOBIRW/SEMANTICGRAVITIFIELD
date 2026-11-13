@@ -287,7 +287,7 @@ pub fn normalize_deal(
     Ok(MexcObservation {
         event,
         metadata: MexcObservationMetadata::Trade {
-            aggressor_side,
+            trade_side,
             position_action,
             self_trade,
             transaction_id: frame.transaction_id.clone(),
