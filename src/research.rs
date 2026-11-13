@@ -456,7 +456,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn rejects_unsupported_event_schema_version() {
         let mut events = vec![
