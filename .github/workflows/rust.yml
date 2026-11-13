@@ -6,10 +6,12 @@ on:
       - main
       - foundation/**
       - implementation/**
+      - feat/**
   pull_request:
     branches:
       - main
       - foundation/**
+      - feat/**
 
 permissions:
   contents: read
