@@ -774,6 +774,30 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn rejects_unsupported_capture_schema_version() {
+        let lines = capture_lines(11).replacen(r#""schema_version":1"#, r#""schema_version":2"#, 1);
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::UnsupportedCaptureSchema(2))
+        );
+    }
+
+    #[test]
+    fn rejects_non_perpetual_market() {
+        let lines = capture_lines(11).replace(
+            r#""market":"FUTURES_PERPETUAL""#,
+            r#""market":"SPOT""#,
+        );
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::UnsupportedMarket)
+        );
+    }
+
     #[test]
     fn iterator_emits_events_incrementally_in_capture_order() {
         let mut reader = MexcCaptureReader::new(Cursor::new(capture_lines(11)));
