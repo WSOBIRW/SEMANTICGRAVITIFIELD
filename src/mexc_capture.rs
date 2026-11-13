@@ -249,7 +249,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         self.pending.push_back(make_quote_observation(
             spec,
             DepthQuoteFrame {
-                capture_id: self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                capture_id: self
+                    .capture_id
+                    .ok_or(MexcCaptureError::MissingContractSpec)?,
                 symbol,
                 version,
                 bid_ticks: bid,
