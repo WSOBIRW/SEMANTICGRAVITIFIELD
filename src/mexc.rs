@@ -386,12 +386,12 @@ fn decimal_scale_factor_u64(decimals: u32) -> Result<u64, MexcError> {
         .ok_or(MexcError::NumericOverflow)
 }
 
-fn parse_scaled_i64(value: &str, scale: u32) -> Result<i64, MexcError> {
+pub(crate) fn parse_scaled_i64(value: &str, scale: u32) -> Result<i64, MexcError> {
     let parsed = parse_scaled_u64(value, u64::from(scale))?;
     i64::try_from(parsed).map_err(|_| MexcError::NumericOverflow)
 }
 
-fn parse_scaled_u64(value: &str, scale: u64) -> Result<u64, MexcError> {
+pub(crate) fn parse_scaled_u64(value: &str, scale: u64) -> Result<u64, MexcError> {
     if value.is_empty() || value.starts_with('-') || value.starts_with('+') {
         return Err(MexcError::InvalidDecimal);
     }
