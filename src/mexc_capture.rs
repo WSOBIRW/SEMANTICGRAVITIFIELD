@@ -50,6 +50,7 @@ pub struct MexcCaptureReader<R: BufRead> {
     line: String,
     spec: Option<MexcContractSpec>,
     symbol: Option<String>,
+    capture_id: Option<i64>,
     book: DepthBook,
     pending: VecDeque<MexcObservation>,
     failed: bool,
@@ -62,6 +63,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
             line: String::new(),
             spec: None,
             symbol: None,
+            capture_id: None,
             book: DepthBook::default(),
             pending: VecDeque::new(),
             failed: false,
@@ -122,6 +124,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
         )
         .map_err(|_| MexcCaptureError::InvalidContractValue)?;
 
+        self.capture_id = Some(i64_field(record, "initialized_at_ms")?);
         self.symbol = Some(symbol);
         self.spec = Some(spec);
         self.book = DepthBook::default();
@@ -166,6 +169,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
+            self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
             symbol,
             record_version,
             bid,
@@ -232,6 +236,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
+            self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
             symbol,
             version,
             bid,
@@ -351,6 +356,7 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
 
 fn make_quote_observation(
     spec: &MexcContractSpec,
+    capture_id: i64,
     symbol: &str,
     version: u64,
     bid_ticks: i64,
@@ -360,7 +366,7 @@ fn make_quote_observation(
     raw_payload: &str,
 ) -> MexcObservation {
     let event = MarketEvent::quote(
-        format!("mexc:{symbol}:depth:{version}"),
+        format!("mexc:{symbol}:depth:{capture_id}:{version}"),
         "mexc-futures",
         spec.symbol.clone(),
         event_time_ms,
@@ -542,6 +548,7 @@ mod tests {
             "record_type": "capture_start",
             "schema_version": 1,
             "symbol": "BTC_USDT",
+            "initialized_at_ms": 900,
             "price_tick": "0.01",
             "quantity_step": "0.01",
             "contract_size": "0.001",
