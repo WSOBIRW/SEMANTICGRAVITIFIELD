@@ -75,6 +75,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         while let Some(item) = self.next() {
             observations.push(item?);
         }
+        if self.spec.is_none() {
+            return Err(MexcCaptureError::MissingContractSpec);
+        }
         observations.sort_by_key(|item| {
             (
                 item.event.event_time_ms,
@@ -124,7 +127,11 @@ impl<R: BufRead> MexcCaptureReader<R> {
         )
         .map_err(|_| MexcCaptureError::InvalidContractValue)?;
 
-        self.capture_id = Some(i64_field(record, "initialized_at_ms")?);
+        let capture_id = i64_field(record, "initialized_at_ms")?;
+        if capture_id < 0 {
+            return Err(MexcCaptureError::InvalidTimestamp);
+        }
+        self.capture_id = Some(capture_id);
         self.symbol = Some(symbol);
         self.spec = Some(spec);
         self.book = DepthBook::default();
@@ -416,8 +423,10 @@ fn parse_snapshot_levels(
             || quantity_lots == 0
             || price_ticks % spec.price_unit_ticks != 0
             || quantity_lots % spec.volume_unit_lots != 0
-            || result.insert(price_ticks, quantity_lots).is_some()
         {
+            return Err(MexcCaptureError::InvalidDepthSnapshot);
+        }
+        if result.insert(price_ticks, quantity_lots).is_some() {
             return Err(MexcCaptureError::DuplicateLevel);
         }
     }
