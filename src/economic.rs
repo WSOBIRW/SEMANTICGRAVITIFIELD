@@ -12,10 +12,16 @@ use crate::research::{OpportunityCandidate, PriceDirection};
 /// положительное значение означает расход, отрицательное — полученный доход.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EconomicConfig {
+    /// Ставка комиссии входа в bps от notional входа.
     pub entry_fee_bps: u64,
+    /// Ставка комиссии выхода в bps от notional выхода.
     pub exit_fee_bps: u64,
+    /// Предполагаемое проскальзывание входа в bps от notional входа.
     pub entry_slippage_bps: u64,
+    /// Предполагаемое проскальзывание выхода в bps от notional выхода.
     pub exit_slippage_bps: u64,
+    /// Суммарный funding cashflow за период, приведённый к notional входа.
+    /// Положительное значение — расход, отрицательное — доход.
     pub funding_cost_bps: i64,
 }
 
@@ -76,7 +82,7 @@ pub struct EconomicAssessment {
     pub round_trip_slippage_bps: i128,
     /// Суммарное финансирование за период удержания, в bps.
     pub funding_cost_bps: i128,
-    /// Сумма всех учтённых издержек. Может быть отрицательной при доходе от funding.
+    /// Все учтённые издержки в bps от notional входа. Может быть отрицательной при доходе от funding.
     pub total_cost_bps: i128,
     /// Валовой результат минус все учтённые издержки, в bps.
     pub net_return_bps: i128,
