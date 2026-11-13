@@ -70,6 +70,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
         }
     }
 
+    /// Собирает конечный capture в память и сортирует его по exchange event time.
+    /// Для длинных файлов используйте Iterator напрямую, чтобы обрабатывать события потоково.
     pub fn read_sorted(mut self) -> Result<Vec<MexcObservation>, MexcCaptureError> {
         let mut observations = Vec::new();
         for item in self.by_ref() {
@@ -689,6 +691,22 @@ mod tests {
                 matching_engine_time_ms: Some(1_004),
             }
         );
+    }
+
+
+    #[test]
+    fn iterator_emits_events_incrementally_in_capture_order() {
+        let mut reader = MexcCaptureReader::new(Cursor::new(capture_lines(11)));
+        let first = reader.next().unwrap().unwrap();
+        assert_eq!(first.event.event_time_ms, 1_000);
+        assert_eq!(first.event.source_id, "mexc-futures:900");
+
+        let second = reader.next().unwrap().unwrap();
+        assert_eq!(second.event.event_time_ms, 1_004);
+        assert!(matches!(
+            second.event.payload,
+            EventPayload::Trade { .. }
+        ));
     }
 
     #[test]
