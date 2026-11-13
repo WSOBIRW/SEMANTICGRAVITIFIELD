@@ -127,7 +127,7 @@ pub fn evaluate_round_trip(
                 return Err(EconomicError::InvalidQuote);
             }
             match price_scale {
-                Some(existing) if *existing != *incoming_scale => {
+                Some(existing) if existing != *incoming_scale => {
                     return Err(EconomicError::MixedPriceScales);
                 }
                 None => price_scale = Some(*incoming_scale),
