@@ -6,10 +6,24 @@
 
 Главная цель SEMANTICGRAVITIFIELD — получение реальной экономической прибыли. Первая и текущая область реализации — исследование торговых возможностей. Канонические формулировки находятся в PURPOSE.md и ARCHITECTURE.md; последовательность работ — в ROADMAP.md.
 
+### PR #14 — актуальное состояние файлового backend на 2026-11-14
+
+- PR открыт и не слит: https://github.com/WSOBIRW/SEMANTICGRAVITIFIELD/pull/14
+- Ветка: `feat/file-generation-recovery-storage-current`.
+- Текущий HEAD на момент этой записи: `9c190704476dd120b9bea08c4c2a1e4948bcebf4`. Изменения PR не входят в main.
+- Целевая и обязательная проверяемая среда файлового backend — Linux. macOS не является целевой платформой; macOS job и специальная нормализация путей macOS удалены. Общая Unix-реализация не означает обязательство поддерживать все Unix-платформы.
+- Из `src/file_storage.rs` удалена ненужная платформенная ветка macOS (46 строк).
+- В `src/snapshot.rs` устранено предварительное резервирование `HashMap` по недоверенному `stream_count`: карта растёт по фактически декодированным записям.
+- Локальная проверка на Linux для HEAD `9c19070`: rustfmt PASS, Clippy PASS, 70 unit tests PASS, 1 integration test PASS.
+- CI run #556 на точном HEAD `9c190704476dd120b9bea08c4c2a1e4948bcebf4`: форматирование, Clippy и тесты PASS; установка cargo-audit ещё выполняется, поэтому полный CI и RustSec gate пока не имеют итогового результата.
+- Все inline review threads PR #14 закрыты после проверки исправлений или ответа о неподдерживаемой платформе. Закрытие macOS ACL finding не означает реализацию macOS ACL-механизма: платформа исключена из целевой матрицы.
+- Ветка синхронизирована с main на `afabdebd`; после этого main получил два документационных коммита и продвинулся до `a040cef058da1e59bc57364f54c04db6515332f2`. Перед окончательной оценкой слияния ветка PR должна включить эти последние изменения main.
+- PR не сливать без отдельного разрешения владельца проекта.
+
 ### PR #15 — исследовательское ядро и приём MEXC capture
 
 - Ветка: `implementation/market-research-core`.
-- Текущий HEAD: `509a5eb153c80c3b80a5de702bdc8d2e403d2631`.
+- Текущий HEAD: `eabfa2b66c254a4497d1dfb1152b67b880257bd4`.
 - PR #15 открыт, не слит; изменения не входят в main.
 - `src/research.rs`: детерминированный анализ упорядоченного окна Quote/Trade одного инструмента, расчёт движения цены, спреда, количества событий и объёма, выделение кандидата по явным параметрам.
 - Исследовательское окно отклоняет смешение инструментов, источников и ценовых шкал, нарушение порядка времени и неподдерживаемую версию схемы.
@@ -19,7 +33,7 @@
 - `src/mexc_capture.rs`: потоковый читатель JSONL capture-формата TRADINGCORE. Он восстанавливает top-of-book по depth snapshot/delta, проверяет последовательность depth version, нормализует deal frames, сохраняет связь с исходным кадром через SHA-256 и сортирует конечный набор по exchange event time.
 - SGF не дублирует MEXC WebSocket transport. Сбор, heartbeat, reconnect и исходные кадры остаются у источника данных TRADINGCORE; SGF принимает capture и независимо проводит исследование.
 - Экономическая оценка пока является top-of-book приближением, а не завершённым backtest. Не моделируются глубина стакана для размера позиции, очередь, задержка исполнения, contractSize в расчёте PnL, ликвидация и фактические funding settlements.
-- CI run #554 на точном HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` завершился SUCCESS: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS.
+- CI run #554 на HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` прошёл: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS. После проверки schema_version каждого типа capture-записи, venue/market и итоговой непрерывности потока CI run #568 на точном HEAD `eabfa2b66c254a4497d1dfb1152b67b880257bd4` завершился SUCCESS: rustfmt PASS, Clippy PASS, 84 unit tests PASS и 1 integration test PASS.
 - Локальная сборка в этой рабочей среде не выполнялась: Rust toolchain недоступен.
 
 ## Исторический срез на 2026-11-11
