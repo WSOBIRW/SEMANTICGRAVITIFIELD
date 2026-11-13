@@ -21,8 +21,8 @@ pub use recovery::{
     RecoveryPackage, RecoveryStorage, RecoveryStorageError,
 };
 pub use research::{
-    analyze_market_window, MarketWindowMetrics, OpportunityCandidate, PriceDirection, ResearchConfig,
-    ResearchError, ResearchReport,
+    analyze_market_window, MarketWindowMetrics, OpportunityCandidate, PriceDirection,
+    ResearchConfig, ResearchError, ResearchReport,
 };
 pub use snapshot::SnapshotError;
 pub use validation::{EventValidator, ValidationError, ValidationWarning};
