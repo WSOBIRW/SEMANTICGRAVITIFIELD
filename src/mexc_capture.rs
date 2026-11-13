@@ -101,7 +101,6 @@ impl<R: BufRead> MexcCaptureReader<R> {
         }
     }
 
-
     pub fn with_limits(reader: R, limits: MexcCaptureLimits) -> Result<Self, MexcCaptureError> {
         if limits.max_line_bytes == 0
             || limits.max_levels_per_side == 0
