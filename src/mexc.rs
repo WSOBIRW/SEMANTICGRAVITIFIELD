@@ -2,6 +2,9 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{MarketEvent, Quote};
 
+pub const MEXC_FUTURES_WS_JSON_ENDPOINT: &str = "wss://contract.mexc.com/edge";
+pub const MEXC_FUTURES_WS_PING_JSON: &str = r#"{"method":"ping"}"#;
+
 /// Метаданные одного MEXC Futures контракта.
 ///
 /// priceScale и volScale из MEXC contract metadata представлены здесь
@@ -20,6 +23,39 @@ pub struct MexcContractSpec {
 }
 
 impl MexcContractSpec {
+
+    /// Возвращает JSON-команды подписки на ticker и каждую отдельную сделку.
+    ///
+    /// compress:false отключает агрегацию deal-сообщений в JSON-протоколе.
+    /// Для Protobuf действует отдельный параметр reduce:false; этот метод
+    /// предназначен только для JSON WebSocket.
+    pub fn json_subscribe_messages(&self) -> [String; 2] {
+        [
+            format!(
+                r#"{{"method":"sub.ticker","param":{{"symbol":"{}"}}}}"#,
+                self.symbol
+            ),
+            format!(
+                r#"{{"method":"sub.deal","param":{{"symbol":"{}","compress":false}}}}"#,
+                self.symbol
+            ),
+        ]
+    }
+
+    /// Возвращает JSON-команды снятия обеих подписок.
+    pub fn json_unsubscribe_messages(&self) -> [String; 2] {
+        [
+            format!(
+                r#"{{"method":"unsub.ticker","param":{{"symbol":"{}"}}}}"#,
+                self.symbol
+            ),
+            format!(
+                r#"{{"method":"unsub.deal","param":{{"symbol":"{}"}}}}"#,
+                self.symbol
+            ),
+        ]
+    }
+
     /// Создаёт спецификацию из полей MEXC contract metadata.
     ///
     /// price_decimals соответствует priceScale, volume_decimals — volScale.
@@ -33,7 +69,13 @@ impl MexcContractSpec {
     ) -> Result<Self, MexcError> {
         let symbol = symbol.into();
         let contract_size = contract_size.into();
-        if symbol.trim().is_empty() || symbol.trim() != symbol || contract_size.trim().is_empty() {
+        if symbol.trim().is_empty()
+            || symbol.trim() != symbol
+            || !symbol
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+            || contract_size.trim().is_empty()
+        {
             return Err(MexcError::InvalidContractSpec);
         }
 
@@ -424,6 +466,36 @@ mod tests {
             timestamp_ms: 1_100,
             matching_engine_time_ms: Some(1_099),
         }
+    }
+
+
+    #[test]
+    fn builds_json_subscriptions_without_trade_aggregation() {
+        let spec = spec();
+        assert_eq!(
+            spec.json_subscribe_messages(),
+            [
+                r#"{"method":"sub.ticker","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
+                r#"{"method":"sub.deal","param":{"symbol":"BTC_USDT","compress":false}}"#.to_owned(),
+            ]
+        );
+        assert_eq!(
+            spec.json_unsubscribe_messages(),
+            [
+                r#"{"method":"unsub.ticker","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
+                r#"{"method":"unsub.deal","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
+            ]
+        );
+        assert_eq!(MEXC_FUTURES_WS_PING_JSON, r#"{"method":"ping"}"#);
+        assert_eq!(MEXC_FUTURES_WS_JSON_ENDPOINT, "wss://contract.mexc.com/edge");
+    }
+
+    #[test]
+    fn rejects_unsafe_contract_symbols() {
+        assert_eq!(
+            MexcContractSpec::new("BTC_USDT\"}", 2, 2, "0.01", "0.01", "0.001"),
+            Err(MexcError::InvalidContractSpec)
+        );
     }
 
     #[test]
