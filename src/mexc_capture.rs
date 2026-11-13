@@ -549,7 +549,7 @@ fn best_prices(book: &DepthBook) -> Result<(i64, i64), MexcCaptureError> {
     let bid = book.bids.last_key_value().map(|(price, _)| *price);
     let ask = book.asks.first_key_value().map(|(price, _)| *price);
     match (bid, ask) {
-        (Some(bid), Some(ask)) if bid < ask => Ok((bid, ask)),
+        (Some(bid), Some(ask)) if bid <= ask => Ok((bid, ask)),
         (Some(_), Some(_)) => Err(MexcCaptureError::CrossedBook),
         _ => Err(MexcCaptureError::EmptyBook),
     }
@@ -728,6 +728,34 @@ mod tests {
         ]
         .join("\n")
             + "\n"
+    }
+
+
+    #[test]
+    fn preserves_exact_decimal_tokens_from_json_numbers() {
+        let spec = MexcContractSpec::from_steps(
+            "BTC_USDT",
+            "0.000000001",
+            "0.000000001",
+            "0.001",
+        )
+        .unwrap();
+        let raw: Value = serde_json::from_str(
+            r#"{"bids":[[10000000.000000001,1,1]],"asks":[[10000000.000000002,1,1]]}"#,
+        )
+        .unwrap();
+        let bids = parse_snapshot_levels(&raw["bids"], &spec).unwrap();
+        let asks = parse_snapshot_levels(&raw["asks"], &spec).unwrap();
+        assert!(bids.contains_key(&10_000_000_000_000_001));
+        assert!(asks.contains_key(&10_000_000_000_000_002));
+    }
+
+    #[test]
+    fn accepts_locked_top_of_book() {
+        let mut book = DepthBook::default();
+        book.bids.insert(10_000, 100);
+        book.asks.insert(10_000, 100);
+        assert_eq!(best_prices(&book), Ok((10_000, 10_000)));
     }
 
     #[test]
