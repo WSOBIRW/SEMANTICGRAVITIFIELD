@@ -1,18 +1,42 @@
 # Статус реализации SGF
 
-## Актуальный срез на 2026-11-11
+## Актуальный срез на 2026-11-14
+
+### Главная цель и область первой реализации
+
+Главная цель SEMANTICGRAVITIFIELD — получение реальной экономической прибыли. Первая и текущая область реализации — исследование торговых возможностей. Канонические формулировки находятся в PURPOSE.md и ARCHITECTURE.md; последовательность работ — в ROADMAP.md.
+
+### PR #15 — исследовательское ядро и приём MEXC capture
+
+- Ветка: `implementation/market-research-core`.
+- Текущий HEAD: `509a5eb153c80c3b80a5de702bdc8d2e403d2631`.
+- PR #15 открыт, не слит; изменения не входят в main.
+- `src/research.rs`: детерминированный анализ упорядоченного окна Quote/Trade одного инструмента, расчёт движения цены, спреда, количества событий и объёма, выделение кандидата по явным параметрам.
+- Исследовательское окно отклоняет смешение инструментов, источников и ценовых шкал, нарушение порядка времени и неподдерживаемую версию схемы.
+- `src/economic.rs`: предварительная оценка условного round-trip по bid/ask. Long: вход по ask и выход по bid. Short: вход по bid и выход по ask.
+- Комиссии и проскальзывание входа/выхода задаются раздельно. Exit costs консервативно приводятся к notional входа с округлением вверх. Funding cashflow задаётся явно.
+- `src/mexc.rs`: типизированная нормализация декодированных MEXC Futures ticker/deal кадров. Цены и объёмы преобразуются в целые fixed-point значения без f64; проверяются priceUnit и volUnit. Сохраняются trade side, действие позиции, self-trade, transaction ID, matching-engine timestamp и SHA-256 исходного кадра.
+- `src/mexc_capture.rs`: потоковый читатель JSONL capture-формата TRADINGCORE. Он восстанавливает top-of-book по depth snapshot/delta, проверяет последовательность depth version, нормализует deal frames, сохраняет связь с исходным кадром через SHA-256 и сортирует конечный набор по exchange event time.
+- SGF не дублирует MEXC WebSocket transport. Сбор, heartbeat, reconnect и исходные кадры остаются у источника данных TRADINGCORE; SGF принимает capture и независимо проводит исследование.
+- Экономическая оценка пока является top-of-book приближением, а не завершённым backtest. Не моделируются глубина стакана для размера позиции, очередь, задержка исполнения, contractSize в расчёте PnL, ликвидация и фактические funding settlements.
+- CI run #554 на точном HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` завершился SUCCESS: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS.
+- Локальная сборка в этой рабочей среде не выполнялась: Rust toolchain недоступен.
+
+## Исторический срез на 2026-11-11
 
 Этот раздел имеет приоритет над историческими записями ниже. Проверки и review относятся только к указанному SHA.
 
 ### PR #14 — файловое хранилище
-- HEAD: `621e670a6dcbda6f0ed11126b99fbf688300d417`; PR OPEN, не слит.
-- CI run #431 на точном HEAD `621e670a6dcbda6f0ed11126b99fbf688300d417` завершился SUCCESS: Linux format/Clippy/tests PASS (70 unit + 1 integration), cargo-audit 0.22.2, RustSec и source/license gates PASS; macOS format/Clippy/tests PASS (71 unit + 1 integration).
-- Code Review receipt на старом SHA `bd35db9` не переносится на текущий HEAD. Повторные Code Review и отдельный security-focused review на `621e670` запрошены; receipts ещё не получены.
-- Исправлены P2 по lock inode, staging directory permissions и pre-existing writable store: lock открывается no-follow/nonblocking и блокируется через `FileLock::from_file`; проверяются owner и nlink; root/generations/staging имеют 0700, новые lock/CURRENT/artifacts — 0600.
-- До чтения содержимого отклоняются существующие root/generations с group/world write; parent chain проверяется на владельца root/effective UID и отсутствие writable non-sticky компонентов. Sticky system directories допускаются. Добавлены тесты на writable root, writable generations, writable parent и сохранение исходного содержимого при отказе.
+- HEAD: `621e670a6dcbda6f0ed11126b99fbf688300d417`; PR OPEN, не слит; base: `main`.
+- CI run #431 на точном HEAD `621e670a6dcbda6f0ed11126b99fbf688300d417` завершился SUCCESS: Linux format/Clippy/tests PASS (70 unit + 1 integration), cargo-audit 0.22.2, RustSec и source/license gates PASS; macOS format/Clippy/tests PASS (71 unit + 1 integration). Этот результат относится только к указанному SHA.
+- На текущем HEAD остаётся незакрытый inline P2 review finding: проверка POSIX mode bits не обнаруживает ACL на macOS, которые могут предоставить другому UID право обхода/изменения storage root или чтения унаследованных recovery artifacts. Finding открыт; исправление и тесты пока не подтверждены.
+- Последний доступный Code Review receipt относится к `621e670`, но наличие receipt не означает отсутствие замечаний: открытый ACL finding остаётся release blocker. Отдельное заключение security-focused review на точном HEAD не подтверждено.
+- Исправлены P2 по lock inode, staging permissions и pre-existing writable store: lock открывается no-follow/nonblocking и блокируется через `FileLock::from_file`; проверяются owner и nlink; root/generations/staging имеют 0700, новые lock/CURRENT/artifacts — 0600.
+- До чтения содержимого отклоняются существующие root/generations с group/world write; parent chain проверяется на владельца root/effective UID и отсутствие writable non-sticky компонентов. Sticky system directories допускаются. Добавлены отрицательные тесты.
 - Filesystem root отклоняется; компоненты `..` в storage path отклоняются, чтобы не менять семантику разрешения пути при symlink. Компоненты `.` нормализуются без разрешения произвольных symlink.
+- Ограниченные per-artifact/aggregate чтения не являются полным бюджетом декодированного состояния: отдельная проверка allocations, создаваемых parser/validator из внутренних счётчиков, должна быть подтверждена до production-использования.
 - Границы: доверенная родительская цепочка обязательна; same-UID и privileged attackers не покрываются; полная descriptor-relative реализация и GC/retention не реализованы.
-- PR не сливать до успешного CI на текущем SHA, повторного Code Review, отдельного security-focused review и проверки всех review threads.
+- PR не сливать до закрытия ACL finding, подтверждения bounded decoded-state validation, актуального CI, повторного Code Review, отдельного Security Review и проверки всех review threads на точном HEAD.
 
 ### PR #13 — синтетическая модель наблюдения
 - HEAD: `e88df5693a5cc2cc8fcdcd94ac8d29d78e2fec37`; PR OPEN, не слит; base — PR #12.
