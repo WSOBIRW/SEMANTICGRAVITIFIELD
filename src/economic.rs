@@ -3,16 +3,19 @@ use crate::research::{OpportunityCandidate, PriceDirection};
 
 /// Издержки одного полного входа и выхода.
 ///
-/// Значения комиссий и проскальзывания задаются на одну сторону сделки.
-/// Для MEXC Futures сюда передаются значения, соответствующие конкретному
-/// контракту, типу исполнения и тарифному уровню. Значения не зашиты в ядро.
+/// Комиссии и проскальзывание входа и выхода задаются отдельно.
+/// Это позволяет учитывать разные типы исполнения, например maker на входе
+/// и taker на выходе. Для MEXC Futures используются значения конкретного
+/// контракта и тарифного уровня; значения не зашиты в ядро.
 ///
 /// funding_cost_bps — суммарное финансирование за время удержания позиции:
 /// положительное значение означает расход, отрицательное — полученный доход.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EconomicConfig {
-    pub fee_bps_per_side: u64,
-    pub slippage_bps_per_side: u64,
+    pub entry_fee_bps: u64,
+    pub exit_fee_bps: u64,
+    pub entry_slippage_bps: u64,
+    pub exit_slippage_bps: u64,
     pub funding_cost_bps: i64,
 }
 
@@ -82,11 +85,15 @@ pub fn evaluate_round_trip(
     candidate: &OpportunityCandidate,
     config: EconomicConfig,
 ) -> Result<EconomicAssessment, EconomicError> {
-    let fee = i128::from(config.fee_bps_per_side)
-        .checked_mul(2)
+    let entry_fee = i128::from(config.entry_fee_bps);
+    let exit_fee = i128::from(config.exit_fee_bps);
+    let entry_slippage = i128::from(config.entry_slippage_bps);
+    let exit_slippage = i128::from(config.exit_slippage_bps);
+    let fee = entry_fee
+        .checked_add(exit_fee)
         .ok_or(EconomicError::ArithmeticOverflow)?;
-    let slippage = i128::from(config.slippage_bps_per_side)
-        .checked_mul(2)
+    let slippage = entry_slippage
+        .checked_add(exit_slippage)
         .ok_or(EconomicError::ArithmeticOverflow)?;
     let funding = i128::from(config.funding_cost_bps);
 
@@ -275,8 +282,10 @@ mod tests {
 
     fn config() -> EconomicConfig {
         EconomicConfig {
-            fee_bps_per_side: 2,
-            slippage_bps_per_side: 1,
+            entry_fee_bps: 2,
+            exit_fee_bps: 2,
+            entry_slippage_bps: 1,
+            exit_slippage_bps: 1,
             funding_cost_bps: 0,
         }
     }
@@ -322,8 +331,10 @@ mod tests {
             quote("q2", 2_000, 10_000, 10_010),
         ];
         let config = EconomicConfig {
-            fee_bps_per_side: 0,
-            slippage_bps_per_side: 0,
+            entry_fee_bps: 0,
+            exit_fee_bps: 0,
+            entry_slippage_bps: 0,
+            exit_slippage_bps: 0,
             funding_cost_bps: -3,
         };
         let result = evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
