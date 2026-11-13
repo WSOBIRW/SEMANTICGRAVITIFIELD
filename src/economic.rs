@@ -220,6 +220,7 @@ pub fn evaluate_round_trip(
         round_trip_fee_bps: fee,
         entry_slippage_bps: entry_slippage,
         exit_slippage_bps: exit_slippage,
+        round_trip_slippage_bps: slippage,
         funding_cost_bps: funding,
         total_cost_bps: total_cost,
         net_return_bps: net,
