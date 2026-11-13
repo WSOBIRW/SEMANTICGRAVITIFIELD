@@ -248,7 +248,11 @@ pub fn evaluate_round_trip(
     })
 }
 
-fn scale_exit_cost(rate_bps: i128, exit_price: i64, entry_price: i64) -> Result<i128, EconomicError> {
+fn scale_exit_cost(
+    rate_bps: i128,
+    exit_price: i64,
+    entry_price: i64,
+) -> Result<i128, EconomicError> {
     let numerator = rate_bps
         .checked_mul(i128::from(exit_price))
         .ok_or(EconomicError::ArithmeticOverflow)?;
@@ -258,7 +262,9 @@ fn scale_exit_cost(rate_bps: i128, exit_price: i64, entry_price: i64) -> Result<
     if remainder == 0 {
         Ok(quotient)
     } else {
-        quotient.checked_add(1).ok_or(EconomicError::ArithmeticOverflow)
+        quotient
+            .checked_add(1)
+            .ok_or(EconomicError::ArithmeticOverflow)
     }
 }
 
