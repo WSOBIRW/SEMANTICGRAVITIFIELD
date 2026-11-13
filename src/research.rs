@@ -17,6 +17,7 @@ pub struct ResearchConfig {
 /// Ошибка при анализе окна рыночных событий.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResearchError {
+    InvalidConfig,
     EmptyWindow,
     EmptyInstrumentId,
     MixedInstruments,
@@ -85,6 +86,7 @@ pub struct ResearchReport {
 
 /// Анализирует одно упорядоченное окно событий одного инструмента.
 ///
+/// Входные события должны быть предварительно проверены EventValidator.
 /// Кандидат формируется только при наличии сделок и котировок, достаточном
 /// движении цены, допустимом максимальном спреде и достаточном числе сделок.
 /// Никакая доходность или исполнимость сделки здесь не моделируется.
@@ -92,6 +94,10 @@ pub fn analyze_market_window(
     events: &[MarketEvent],
     config: ResearchConfig,
 ) -> Result<ResearchReport, ResearchError> {
+    if config.minimum_absolute_move_bps == 0 || config.minimum_trade_count < 2 {
+        return Err(ResearchError::InvalidConfig);
+    }
+
     let first = events.first().ok_or(ResearchError::EmptyWindow)?;
     if first.instrument_id.trim().is_empty() {
         return Err(ResearchError::EmptyInstrumentId);
@@ -146,9 +152,10 @@ pub fn analyze_market_window(
                 check_price_scale(&mut price_scale, *event_scale)?;
                 quote_count += 1;
 
-                let spread_bps = ((*ask_ticks as i128 - *bid_ticks as i128) * 20_000
-                    / (*ask_ticks as i128 + *bid_ticks as i128))
-                    as u64;
+                let spread_numerator = (*ask_ticks as i128 - *bid_ticks as i128) * 20_000;
+                let spread_denominator = *ask_ticks as i128 + *bid_ticks as i128;
+                let spread_bps =
+                    ((spread_numerator + spread_denominator - 1) / spread_denominator) as u64;
                 maximum_observed_spread_bps = Some(
                     maximum_observed_spread_bps
                         .map_or(spread_bps, |current: u64| current.max(spread_bps)),
@@ -411,6 +418,38 @@ mod tests {
         assert_eq!(
             analyze_market_window(&[bad_trade], config()),
             Err(ResearchError::InvalidTrade)
+        );
+    }
+
+
+    #[test]
+    fn rounds_spread_up_before_applying_maximum_threshold() {
+        let events = vec![
+            quote("q1", 1, 10_000, 10_021),
+            trade("t1", 2, 10_000, 1),
+            trade("t2", 3, 10_100, 1),
+        ];
+
+        let report = analyze_market_window(&events, config()).unwrap();
+        assert_eq!(report.metrics.maximum_observed_spread_bps, Some(21));
+        assert!(report.candidate.is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_research_configuration() {
+        let events = vec![
+            quote("q1", 1, 10_000, 10_010),
+            trade("t1", 2, 10_000, 1),
+            trade("t2", 3, 10_100, 1),
+        ];
+        let invalid = ResearchConfig {
+            minimum_absolute_move_bps: 0,
+            ..config()
+        };
+
+        assert_eq!(
+            analyze_market_window(&events, invalid),
+            Err(ResearchError::InvalidConfig)
         );
     }
 
