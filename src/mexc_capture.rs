@@ -652,6 +652,7 @@ mod tests {
         let deal_raw = r#"{"channel":"push.deal","symbol":"BTC_USDT"}"#;
         let deals = json!({
             "record_type": "deal_frame",
+            "schema_version": 1,
             "captured_at_ms": 1006,
             "symbol": "BTC_USDT",
             "raw_payload": deal_raw,
@@ -670,6 +671,7 @@ mod tests {
         let delta_raw = r#"{"channel":"push.depth","symbol":"BTC_USDT"}"#;
         let delta = json!({
             "record_type": "depth_delta",
+            "schema_version": 1,
             "captured_at_ms": 1011,
             "symbol": "BTC_USDT",
             "begin": sequence_begin,
