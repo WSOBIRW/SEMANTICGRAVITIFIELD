@@ -175,7 +175,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         self.pending.push_back(make_quote_observation(
             spec,
             DepthQuoteFrame {
-                capture_id: self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                capture_id: self
+                    .capture_id
+                    .ok_or(MexcCaptureError::MissingContractSpec)?,
                 symbol,
                 version: record_version,
                 bid_ticks: bid,
@@ -385,12 +387,12 @@ struct DepthQuoteFrame<'a> {
     raw_payload: &'a str,
 }
 
-fn make_quote_observation(
-    spec: &MexcContractSpec,
-    frame: DepthQuoteFrame<'_>,
-) -> MexcObservation {
+fn make_quote_observation(spec: &MexcContractSpec, frame: DepthQuoteFrame<'_>) -> MexcObservation {
     let event = MarketEvent::quote(
-        format!("mexc:{}:depth:{}:{}", frame.symbol, frame.capture_id, frame.version),
+        format!(
+            "mexc:{}:depth:{}:{}",
+            frame.symbol, frame.capture_id, frame.version
+        ),
         format!("mexc-futures:{}", frame.capture_id),
         spec.symbol.clone(),
         frame.event_time_ms,
