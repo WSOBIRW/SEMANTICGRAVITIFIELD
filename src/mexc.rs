@@ -306,7 +306,7 @@ pub fn normalize_deal(
     let event = MarketEvent {
         schema_version: 1,
         event_id,
-        source_id: "mexc-futures-ws".to_owned(),
+        source_id: "mexc-futures".to_owned(),
         instrument_id: spec.symbol.clone(),
         event_time_ms: frame.timestamp_ms,
         received_time_ms,
@@ -482,7 +482,7 @@ mod tests {
         let result =
             normalize_ticker(&spec(), &ticker(), 1_005, r#"{"channel":"push.ticker"}"#).unwrap();
 
-        assert_eq!(result.event.source_id, "mexc-futures-ws");
+        assert_eq!(result.event.source_id, "mexc-futures");
         assert_eq!(result.event.instrument_id, "BTC_USDT");
         assert_eq!(result.event.event_time_ms, 1_000);
         assert_eq!(result.event.received_time_ms, 1_005);
