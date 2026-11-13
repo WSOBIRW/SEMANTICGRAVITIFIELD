@@ -21,7 +21,9 @@ pub enum ResearchError {
     UnsupportedSchema(u16),
     EmptyWindow,
     EmptyInstrumentId,
+    EmptySourceId,
     MixedInstruments,
+    MixedSources,
     OutOfOrderEvents {
         previous_time_ms: i64,
         current_time_ms: i64,
@@ -104,7 +106,12 @@ pub fn analyze_market_window(
         return Err(ResearchError::EmptyInstrumentId);
     }
 
+    if first.source_id.trim().is_empty() {
+        return Err(ResearchError::EmptySourceId);
+    }
+
     let instrument_id = first.instrument_id.clone();
+    let source_id = first.source_id.clone();
     let start_time_ms = first.event_time_ms;
     let mut end_time_ms = first.event_time_ms;
     let mut previous_time_ms = None;
@@ -123,6 +130,12 @@ pub fn analyze_market_window(
         }
         if event.instrument_id.trim().is_empty() {
             return Err(ResearchError::EmptyInstrumentId);
+        }
+        if event.source_id.trim().is_empty() {
+            return Err(ResearchError::EmptySourceId);
+        }
+        if event.source_id != source_id {
+            return Err(ResearchError::MixedSources);
         }
         if event.instrument_id != instrument_id {
             return Err(ResearchError::MixedInstruments);
@@ -468,6 +481,37 @@ mod tests {
         assert_eq!(
             analyze_market_window(&events, config()),
             Err(ResearchError::UnsupportedSchema(2))
+        );
+    }
+
+
+    #[test]
+    fn rejects_mixed_sources_in_one_market_window() {
+        let mut events = vec![
+            quote("q1", 1, 10_000, 10_010),
+            trade("t1", 2, 10_000, 1),
+            trade("t2", 3, 10_100, 1),
+        ];
+        events[2].source_id = "mexc-futures-rest".to_owned();
+
+        assert_eq!(
+            analyze_market_window(&events, config()),
+            Err(ResearchError::MixedSources)
+        );
+    }
+
+    #[test]
+    fn rejects_empty_source_id() {
+        let mut events = vec![
+            quote("q1", 1, 10_000, 10_010),
+            trade("t1", 2, 10_000, 1),
+            trade("t2", 3, 10_100, 1),
+        ];
+        events[0].source_id.clear();
+
+        assert_eq!(
+            analyze_market_window(&events, config()),
+            Err(ResearchError::EmptySourceId)
         );
     }
 
