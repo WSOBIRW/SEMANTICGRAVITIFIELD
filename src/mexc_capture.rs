@@ -72,7 +72,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
     pub fn read_sorted(mut self) -> Result<Vec<MexcObservation>, MexcCaptureError> {
         let mut observations = Vec::new();
-        while let Some(item) = self.next() {
+        for item in self.by_ref() {
             observations.push(item?);
         }
         if self.spec.is_none() {
@@ -174,15 +174,16 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
-            self.capture_id
-                .ok_or(MexcCaptureError::MissingContractSpec)?,
-            symbol,
-            record_version,
-            bid,
-            ask,
-            event_time_ms,
-            captured_at_ms,
-            raw_payload,
+            DepthQuoteFrame {
+                capture_id: self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                symbol,
+                version: record_version,
+                bid_ticks: bid,
+                ask_ticks: ask,
+                event_time_ms,
+                received_time_ms: captured_at_ms,
+                raw_payload,
+            },
         ));
         Ok(())
     }
@@ -245,15 +246,16 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
-            self.capture_id
-                .ok_or(MexcCaptureError::MissingContractSpec)?,
-            symbol,
-            version,
-            bid,
-            ask,
-            event_time_ms,
-            captured_at_ms,
-            raw_payload,
+            DepthQuoteFrame {
+                capture_id: self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                symbol,
+                version,
+                bid_ticks: bid,
+                ask_ticks: ask,
+                event_time_ms,
+                received_time_ms: captured_at_ms,
+                raw_payload,
+            },
         ));
         Ok(())
     }
@@ -372,27 +374,31 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
     }
 }
 
-fn make_quote_observation(
-    spec: &MexcContractSpec,
+struct DepthQuoteFrame<'a> {
     capture_id: i64,
-    symbol: &str,
+    symbol: &'a str,
     version: u64,
     bid_ticks: i64,
     ask_ticks: i64,
     event_time_ms: i64,
     received_time_ms: i64,
-    raw_payload: &str,
+    raw_payload: &'a str,
+}
+
+fn make_quote_observation(
+    spec: &MexcContractSpec,
+    frame: DepthQuoteFrame<'_>,
 ) -> MexcObservation {
     let event = MarketEvent::quote(
-        format!("mexc:{symbol}:depth:{capture_id}:{version}"),
-        format!("mexc-futures:{capture_id}"),
+        format!("mexc:{}:depth:{}:{}", frame.symbol, frame.capture_id, frame.version),
+        format!("mexc-futures:{}", frame.capture_id),
         spec.symbol.clone(),
-        event_time_ms,
-        received_time_ms,
+        frame.event_time_ms,
+        frame.received_time_ms,
         None,
         Quote {
-            bid_ticks,
-            ask_ticks,
+            bid_ticks: frame.bid_ticks,
+            ask_ticks: frame.ask_ticks,
             price_scale: spec.price_scale_factor,
         },
     );
@@ -401,7 +407,7 @@ fn make_quote_observation(
         metadata: MexcObservationMetadata::Quote {
             last_price_ticks: None,
         },
-        raw_payload_sha256: payload_hash(raw_payload),
+        raw_payload_sha256: payload_hash(frame.raw_payload),
         volume_scale_factor: spec.volume_scale_factor,
     }
 }
