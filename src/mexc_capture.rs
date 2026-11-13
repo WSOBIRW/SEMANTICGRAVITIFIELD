@@ -362,10 +362,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
             let event_id = match transaction_id.as_deref() {
                 Some(id) => format!("mexc:{}:deal:{}", spec.symbol, id),
                 None => format!(
-                    "mexc:{}:deal:local:{}:{}:{}:{}",
+                    "mexc:{}:deal:local:{}:{}:{}",
                     spec.symbol,
-                    self.capture_id
-                        .ok_or(MexcCaptureError::MissingContractSpec)?,
                     trade_time_ms,
                     local_event_index.ok_or(MexcCaptureError::InvalidTrade)?,
                     hex_payload_hash(&raw_hash)
