@@ -23,7 +23,7 @@
 ### PR #15 — исследовательское ядро и приём MEXC capture
 
 - Ветка: `implementation/market-research-core`.
-- Текущий HEAD: `eabfa2b66c254a4497d1dfb1152b67b880257bd4`.
+- Текущий HEAD: `2c3b4322527285b3808c5f32e44f504093ba783b`.
 - PR #15 открыт, не слит; изменения не входят в main.
 - `src/research.rs`: детерминированный анализ упорядоченного окна Quote/Trade одного инструмента, расчёт движения цены, спреда, количества событий и объёма, выделение кандидата по явным параметрам.
 - Исследовательское окно отклоняет смешение инструментов, источников и ценовых шкал, нарушение порядка времени и неподдерживаемую версию схемы.
@@ -33,7 +33,7 @@
 - `src/mexc_capture.rs`: потоковый читатель JSONL capture-формата TRADINGCORE. Он восстанавливает top-of-book по depth snapshot/delta, проверяет последовательность depth version, нормализует deal frames, сохраняет связь с исходным кадром через SHA-256 и сортирует конечный набор по exchange event time.
 - SGF не дублирует MEXC WebSocket transport. Сбор, heartbeat, reconnect и исходные кадры остаются у источника данных TRADINGCORE; SGF принимает capture и независимо проводит исследование.
 - Экономическая оценка пока является top-of-book приближением, а не завершённым backtest. Не моделируются глубина стакана для размера позиции, очередь, задержка исполнения, contractSize в расчёте PnL, ликвидация и фактические funding settlements.
-- CI run #554 на HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` прошёл: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS. После проверки schema_version каждого типа capture-записи, venue/market и итоговой непрерывности потока CI run #568 на точном HEAD `eabfa2b66c254a4497d1dfb1152b67b880257bd4` завершился SUCCESS: rustfmt PASS, Clippy PASS, 84 unit tests PASS и 1 integration test PASS.
+- CI run #554 на HEAD `509a5eb153c80c3b80a5de702bdc8d2e403d2631` прошёл: rustfmt PASS, Clippy PASS, 81 unit tests PASS и 1 integration test PASS. После проверки schema_version каждого типа capture-записи, venue/market и итоговой непрерывности потока CI run #568 на HEAD `eabfa2b66c254a4497d1dfb1152b67b880257bd4` прошёл: rustfmt PASS, Clippy PASS, 84 unit tests PASS и 1 integration test PASS. После дополнительных проверок schema_version и ограничения market CI run #573 на точном HEAD `2c3b4322527285b3808c5f32e44f504093ba783b` завершился SUCCESS: rustfmt PASS, Clippy PASS, 86 unit tests PASS и 1 integration test PASS.
 - Локальная сборка в этой рабочей среде не выполнялась: Rust toolchain недоступен.
 
 ## Исторический срез на 2026-11-11
