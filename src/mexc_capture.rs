@@ -140,7 +140,10 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_depth_snapshot(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
-        let spec = self.spec.as_ref().ok_or(MexcCaptureError::MissingContractSpec)?;
+        let spec = self
+            .spec
+            .as_ref()
+            .ok_or(MexcCaptureError::MissingContractSpec)?;
         let symbol = string_field(record, "symbol")?;
         self.check_symbol(symbol)?;
 
@@ -176,7 +179,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         self.pending.push_back(make_quote_observation(
             spec,
-            self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+            self.capture_id
+                .ok_or(MexcCaptureError::MissingContractSpec)?,
             symbol,
             record_version,
             bid,
@@ -295,7 +299,11 @@ impl<R: BufRead> MexcCaptureReader<R> {
             let event = MarketEvent {
                 schema_version: 1,
                 event_id: format!("mexc:{}:deal:{}", spec.symbol, transaction_id),
-                source_id: format!("mexc-futures:{}", self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?),
+                source_id: format!(
+                    "mexc-futures:{}",
+                    self.capture_id
+                        .ok_or(MexcCaptureError::MissingContractSpec)?
+                ),
                 instrument_id: spec.symbol.clone(),
                 event_time_ms: matching_engine_time_ms.unwrap_or(trade_time_ms),
                 received_time_ms: captured_at_ms,
@@ -444,9 +452,7 @@ fn apply_delta_levels(
     for level in levels {
         let price = i64_field(level, "price_ticks")?;
         let quantity = u64_field(level.get("quantity_lots"))?;
-        if price <= 0
-            || price % spec.price_unit_ticks != 0
-            || quantity % spec.volume_unit_lots != 0
+        if price <= 0 || price % spec.price_unit_ticks != 0 || quantity % spec.volume_unit_lots != 0
         {
             return Err(MexcCaptureError::InvalidDepthDelta);
         }
@@ -513,7 +519,12 @@ fn i64_field(value: &Value, key: &str) -> Result<i64, MexcCaptureError> {
     value
         .get(key)
         .and_then(Value::as_i64)
-        .or_else(|| value.get(key).and_then(Value::as_u64).and_then(|v| i64::try_from(v).ok()))
+        .or_else(|| {
+            value
+                .get(key)
+                .and_then(Value::as_u64)
+                .and_then(|v| i64::try_from(v).ok())
+        })
         .ok_or(MexcCaptureError::MissingField)
 }
 
