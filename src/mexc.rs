@@ -23,7 +23,6 @@ pub struct MexcContractSpec {
 }
 
 impl MexcContractSpec {
-
     /// Возвращает JSON-команды подписки на ticker и каждую отдельную сделку.
     ///
     /// compress:false отключает агрегацию deal-сообщений в JSON-протоколе.
@@ -468,7 +467,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn builds_json_subscriptions_without_trade_aggregation() {
         let spec = spec();
@@ -476,7 +474,8 @@ mod tests {
             spec.json_subscribe_messages(),
             [
                 r#"{"method":"sub.ticker","param":{"symbol":"BTC_USDT"}}"#.to_owned(),
-                r#"{"method":"sub.deal","param":{"symbol":"BTC_USDT","compress":false}}"#.to_owned(),
+                r#"{"method":"sub.deal","param":{"symbol":"BTC_USDT","compress":false}}"#
+                    .to_owned(),
             ]
         );
         assert_eq!(
@@ -487,7 +486,10 @@ mod tests {
             ]
         );
         assert_eq!(MEXC_FUTURES_WS_PING_JSON, r#"{"method":"ping"}"#);
-        assert_eq!(MEXC_FUTURES_WS_JSON_ENDPOINT, "wss://contract.mexc.com/edge");
+        assert_eq!(
+            MEXC_FUTURES_WS_JSON_ENDPOINT,
+            "wss://contract.mexc.com/edge"
+        );
     }
 
     #[test]
