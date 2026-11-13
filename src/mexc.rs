@@ -33,7 +33,10 @@ impl MexcContractSpec {
     ) -> Result<Self, MexcError> {
         let symbol = symbol.into();
         let contract_size = contract_size.into();
-        if symbol.trim().is_empty() || contract_size.trim().is_empty() {
+        if symbol.trim().is_empty()
+            || symbol.trim() != symbol
+            || contract_size.trim().is_empty()
+        {
             return Err(MexcError::InvalidContractSpec);
         }
 
@@ -321,7 +324,7 @@ fn decimal_scale_factor(decimals: u32) -> Result<u32, MexcError> {
 }
 
 fn decimal_scale_factor_u64(decimals: u32) -> Result<u64, MexcError> {
-    if decimals > 9 {
+    if decimals > 18 {
         return Err(MexcError::InvalidContractSpec);
     }
     10u64
@@ -469,6 +472,27 @@ mod tests {
             }
         );
         assert_eq!(result.volume_scale_factor, 100);
+    }
+
+
+    #[test]
+    fn supports_volume_precision_above_price_scale_limit() {
+        let spec =
+            MexcContractSpec::new("BTC_USDT", 2, 10, "0.01", "0.0000000001", "0.001")
+                .unwrap();
+        let mut frame = deal();
+        frame.volume = "1.0000000001".to_owned();
+
+        let result = normalize_deal(&spec, &frame, 1_105, "{}").unwrap();
+        assert_eq!(result.volume_scale_factor, 10_000_000_000);
+        assert_eq!(
+            result.event.payload,
+            EventPayload::Trade {
+                price_ticks: 10_002,
+                quantity_lots: 10_000_000_001,
+                price_scale: 100,
+            }
+        );
     }
 
     #[test]
