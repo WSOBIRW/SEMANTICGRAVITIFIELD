@@ -365,7 +365,6 @@ mod tests {
         assert_eq!(result.verdict, EconomicVerdict::Negative);
     }
 
-
     #[test]
     fn reports_asymmetric_entry_and_exit_costs() {
         let events = vec![
@@ -379,8 +378,7 @@ mod tests {
             exit_slippage_bps: 2,
             funding_cost_bps: 0,
         };
-        let result =
-            evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
+        let result = evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
 
         assert_eq!(result.entry_fee_bps, 1);
         assert_eq!(result.exit_fee_bps, 5);
