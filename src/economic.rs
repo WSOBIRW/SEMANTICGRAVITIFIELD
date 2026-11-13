@@ -24,6 +24,7 @@ pub enum EconomicError {
     MissingEntryQuote,
     MissingExitQuote,
     NonPositiveHoldingInterval,
+    OutOfOrderQuotes,
     UnsupportedSchema(u16),
     InvalidQuote,
     MixedPriceScales,
@@ -90,13 +91,22 @@ pub fn evaluate_round_trip(
     let mut first_quote: Option<&MarketEvent> = None;
     let mut last_quote: Option<&MarketEvent> = None;
     let mut price_scale: Option<u32> = None;
+    let mut previous_quote_time_ms: Option<i64> = None;
+    let mut quote_count = 0usize;
+
+    if candidate.end_time_ms <= candidate.start_time_ms {
+        return Err(EconomicError::NonPositiveHoldingInterval);
+    }
 
     for event in events {
+        if event.instrument_id != candidate.instrument_id
+            || event.event_time_ms < candidate.start_time_ms
+            || event.event_time_ms > candidate.end_time_ms
+        {
+            continue;
+        }
         if event.schema_version != 1 {
             return Err(EconomicError::UnsupportedSchema(event.schema_version));
-        }
-        if event.instrument_id != candidate.instrument_id {
-            continue;
         }
         if let EventPayload::Quote {
             bid_ticks,
@@ -114,6 +124,13 @@ pub fn evaluate_round_trip(
                 None => price_scale = Some(*incoming_scale),
                 _ => {}
             }
+            if let Some(previous) = previous_quote_time_ms {
+                if event.event_time_ms < previous {
+                    return Err(EconomicError::OutOfOrderQuotes);
+                }
+            }
+            previous_quote_time_ms = Some(event.event_time_ms);
+            quote_count += 1;
             if first_quote.is_none() {
                 first_quote = Some(event);
             }
@@ -123,6 +140,9 @@ pub fn evaluate_round_trip(
 
     let entry = first_quote.ok_or(EconomicError::MissingEntryQuote)?;
     let exit = last_quote.ok_or(EconomicError::MissingExitQuote)?;
+    if quote_count < 2 {
+        return Err(EconomicError::MissingExitQuote);
+    }
     if std::ptr::eq(entry, exit) || exit.event_time_ms <= entry.event_time_ms {
         return Err(EconomicError::NonPositiveHoldingInterval);
     }
@@ -322,7 +342,7 @@ mod tests {
         let events = vec![quote("q1", 1_000, 10_000, 10_010)];
         assert_eq!(
             evaluate_round_trip(&events, &candidate(PriceDirection::Up), config()),
-            Err(EconomicError::NonPositiveHoldingInterval)
+            Err(EconomicError::MissingExitQuote)
         );
     }
 
