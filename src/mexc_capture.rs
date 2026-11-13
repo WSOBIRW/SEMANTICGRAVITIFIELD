@@ -288,7 +288,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
             let event = MarketEvent {
                 schema_version: 1,
                 event_id: format!("mexc:{}:deal:{}", spec.symbol, transaction_id),
-                source_id: "mexc-futures".to_owned(),
+                source_id: format!("mexc-futures:{}", self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?),
                 instrument_id: spec.symbol.clone(),
                 event_time_ms: trade_time_ms,
                 received_time_ms: captured_at_ms,
@@ -367,7 +367,7 @@ fn make_quote_observation(
 ) -> MexcObservation {
     let event = MarketEvent::quote(
         format!("mexc:{symbol}:depth:{capture_id}:{version}"),
-        "mexc-futures",
+        format!("mexc-futures:{capture_id}"),
         spec.symbol.clone(),
         event_time_ms,
         received_time_ms,
