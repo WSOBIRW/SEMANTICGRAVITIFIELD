@@ -107,7 +107,7 @@ pub enum MexcObservationMetadata {
         last_price_ticks: i64,
     },
     Trade {
-        aggressor_side: MexcTradeSide,
+        trade_side: MexcTradeSide,
         position_action: MexcPositionAction,
         self_trade: bool,
         transaction_id: String,
@@ -244,7 +244,7 @@ pub fn normalize_deal(
         return Err(MexcError::VolumeOffStep);
     }
 
-    let aggressor_side = match frame.trade_type {
+    let trade_side = match frame.trade_type {
         1 => MexcTradeSide::Buy,
         2 => MexcTradeSide::Sell,
         other => return Err(MexcError::InvalidTradeSide(other)),
@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(
             result.metadata,
             MexcObservationMetadata::Trade {
-                aggressor_side: MexcTradeSide::Buy,
+                trade_side: MexcTradeSide::Buy,
                 position_action: MexcPositionAction::Open,
                 self_trade: false,
                 transaction_id: "tx-100".to_owned(),
