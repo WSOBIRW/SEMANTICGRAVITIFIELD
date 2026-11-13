@@ -364,7 +364,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
                 None => format!(
                     "mexc:{}:deal:local:{}:{}:{}:{}",
                     spec.symbol,
-                    self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                    self.capture_id
+                        .ok_or(MexcCaptureError::MissingContractSpec)?,
                     trade_time_ms,
                     local_event_index.ok_or(MexcCaptureError::InvalidTrade)?,
                     hex_payload_hash(&raw_hash)
@@ -786,13 +787,9 @@ mod tests {
         );
     }
 
-
     #[test]
     fn reads_capture_when_trade_id_is_absent() {
-        let lines = capture_lines(11).replace(
-            r#""transaction_id":"tx-1","#,
-            "",
-        );
+        let lines = capture_lines(11).replace(r#""transaction_id":"tx-1","#, "");
         let reader = MexcCaptureReader::new(Cursor::new(lines));
         let events = reader.read_sorted().unwrap();
         assert!(events[1].event.event_id.contains(":deal:local:900:1005:0:"));
