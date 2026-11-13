@@ -147,7 +147,8 @@ pub fn analyze_market_window(
                 quote_count += 1;
 
                 let spread_bps = ((*ask_ticks as i128 - *bid_ticks as i128) * 20_000
-                    / (*ask_ticks as i128 + *bid_ticks as i128)) as u64;
+                    / (*ask_ticks as i128 + *bid_ticks as i128))
+                    as u64;
                 maximum_observed_spread_bps = Some(
                     maximum_observed_spread_bps
                         .map_or(spread_bps, |current: u64| current.max(spread_bps)),
@@ -224,10 +225,7 @@ pub fn analyze_market_window(
     Ok(ResearchReport { metrics, candidate })
 }
 
-fn check_price_scale(
-    current: &mut Option<u32>,
-    incoming: u32,
-) -> Result<(), ResearchError> {
+fn check_price_scale(current: &mut Option<u32>, incoming: u32) -> Result<(), ResearchError> {
     match current {
         Some(existing) if *existing != incoming => Err(ResearchError::MixedPriceScales),
         Some(_) => Ok(()),
@@ -314,10 +312,7 @@ mod tests {
         ];
 
         let report = analyze_market_window(&events, config()).unwrap();
-        assert_eq!(
-            report.candidate.unwrap().direction,
-            PriceDirection::Down
-        );
+        assert_eq!(report.candidate.unwrap().direction, PriceDirection::Down);
     }
 
     #[test]
@@ -378,10 +373,7 @@ mod tests {
 
     #[test]
     fn rejects_out_of_order_events() {
-        let events = vec![
-            quote("q1", 2, 10_000, 10_010),
-            trade("t1", 1, 10_100, 1),
-        ];
+        let events = vec![quote("q1", 2, 10_000, 10_010), trade("t1", 1, 10_100, 1)];
 
         assert!(matches!(
             analyze_market_window(&events, config()),
