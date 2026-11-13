@@ -331,10 +331,12 @@ impl<R: BufRead> MexcCaptureReader<R> {
             return Err(MexcCaptureError::InvalidTrade);
         }
 
-        for trade in trades {
+        for (event_index, trade) in trades.iter().enumerate() {
             let price_ticks = i64_field(trade, "price_ticks")?;
             let quantity_lots = u64_field(trade.get("quantity_lots"))?;
-            let transaction_id = string_field(trade, "transaction_id")?;
+            let transaction_id = optional_string_field(trade, "transaction_id")
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned);
             let trade_time_ms = i64_field(trade, "trade_time_ms")?;
             let matching_engine_time_ms = optional_i64(trade.get("matching_engine_time_ms"));
 
@@ -342,7 +344,6 @@ impl<R: BufRead> MexcCaptureReader<R> {
                 || quantity_lots == 0
                 || price_ticks % spec.price_unit_ticks != 0
                 || quantity_lots % spec.volume_unit_lots != 0
-                || transaction_id.is_empty()
                 || trade_time_ms < 0
                 || matching_engine_time_ms.is_some_and(|time| time < 0)
             {
@@ -353,9 +354,25 @@ impl<R: BufRead> MexcCaptureReader<R> {
             let position_action = parse_position_action(string_field(trade, "position_effect")?)?;
             let self_trade = parse_self_trade(string_field(trade, "self_trade")?)?;
 
+            let local_event_index = if transaction_id.is_none() {
+                Some(u32::try_from(event_index).map_err(|_| MexcCaptureError::InvalidTrade)?)
+            } else {
+                None
+            };
+            let event_id = match transaction_id.as_deref() {
+                Some(id) => format!("mexc:{}:deal:{}", spec.symbol, id),
+                None => format!(
+                    "mexc:{}:deal:local:{}:{}:{}:{}",
+                    spec.symbol,
+                    self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?,
+                    trade_time_ms,
+                    local_event_index.ok_or(MexcCaptureError::InvalidTrade)?,
+                    hex_payload_hash(&raw_hash)
+                ),
+            };
             let event = MarketEvent {
                 schema_version: 1,
-                event_id: format!("mexc:{}:deal:{}", spec.symbol, transaction_id),
+                event_id,
                 source_id: format!(
                     "mexc-futures:{}",
                     self.capture_id
@@ -378,8 +395,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
                     trade_side,
                     position_action,
                     self_trade,
-                    transaction_id: Some(transaction_id.to_owned()),
-                    local_event_index: None,
+                    transaction_id,
+                    local_event_index,
                     trade_time_ms,
                     matching_engine_time_ms,
                 },
@@ -570,6 +587,10 @@ fn parse_other(value: &str) -> Result<u64, MexcCaptureError> {
         .ok_or(MexcCaptureError::InvalidTradeMetadata)
 }
 
+fn optional_string_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
 fn string_field<'a>(value: &'a Value, key: &str) -> Result<&'a str, MexcCaptureError> {
     value
         .get(key)
@@ -618,6 +639,15 @@ fn decimal_string(value: &Value) -> Result<String, MexcCaptureError> {
 
 fn payload_hash(payload: &str) -> [u8; 32] {
     Sha256::digest(payload.as_bytes()).into()
+}
+
+fn hex_payload_hash(digest: &[u8; 32]) -> String {
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write;
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }
 
 #[cfg(test)]
@@ -754,6 +784,26 @@ mod tests {
             reader.read_sorted(),
             Err(MexcCaptureError::UnsupportedVenue)
         );
+    }
+
+
+    #[test]
+    fn reads_capture_when_trade_id_is_absent() {
+        let lines = capture_lines(11).replace(
+            r#""transaction_id":"tx-1","#,
+            "",
+        );
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        let events = reader.read_sorted().unwrap();
+        assert!(events[1].event.event_id.contains(":deal:local:900:1005:0:"));
+        assert!(matches!(
+            events[1].metadata,
+            MexcObservationMetadata::Trade {
+                transaction_id: None,
+                local_event_index: Some(0),
+                ..
+            }
+        ));
     }
 
     #[test]
