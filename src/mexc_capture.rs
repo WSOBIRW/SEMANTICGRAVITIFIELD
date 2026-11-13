@@ -116,7 +116,6 @@ impl<R: BufRead> MexcCaptureReader<R> {
         }
     }
 
-
     fn check_schema(&self, record: &Value) -> Result<(), MexcCaptureError> {
         let schema = u64_field(record.get("schema_version"))?;
         if schema != 1 {
@@ -126,7 +125,10 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_capture_end(&self, record: &Value) -> Result<(), MexcCaptureError> {
-        if record.get("depth_stream_contiguous").and_then(Value::as_bool) == Some(false)
+        if record
+            .get("depth_stream_contiguous")
+            .and_then(Value::as_bool)
+            == Some(false)
             || optional_u64(record.get("depth_sequence_gaps")).unwrap_or(0) > 0
         {
             return Err(MexcCaptureError::CaptureMarkedNonContiguous);
@@ -324,8 +326,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
             .get("trades")
             .and_then(Value::as_array)
             .ok_or(MexcCaptureError::MissingField)?;
-        if optional_u64(record.get("trade_count"))
-            .is_some_and(|count| count != trades.len() as u64)
+        if optional_u64(record.get("trade_count")).is_some_and(|count| count != trades.len() as u64)
         {
             return Err(MexcCaptureError::InvalidTrade);
         }
@@ -742,12 +743,14 @@ mod tests {
         );
     }
 
-
     #[test]
     fn rejects_non_mexc_or_non_perpetual_capture() {
         let lines = capture_lines(11).replace(r#""venue":"MEXC""#, r#""venue":"OTHER""#);
         let reader = MexcCaptureReader::new(Cursor::new(lines));
-        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::UnsupportedVenue));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::UnsupportedVenue)
+        );
     }
 
     #[test]
