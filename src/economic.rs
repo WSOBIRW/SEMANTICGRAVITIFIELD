@@ -58,12 +58,20 @@ pub struct EconomicAssessment {
     pub exit_price_ticks: i64,
     /// Валовой результат до издержек, в bps от цены входа.
     pub gross_return_bps: i128,
+    /// Ставка комиссии входа в bps от notional входа.
     pub entry_fee_bps: i128,
+    /// Ставка комиссии выхода в bps от notional выхода.
     pub exit_fee_bps: i128,
-    /// Комиссия за вход и выход, в bps.
+    pub entry_fee_cost_bps: i128,
+    pub exit_fee_cost_bps: i128,
+    /// Общая комиссия, приведённая к notional входа.
     pub round_trip_fee_bps: i128,
+    /// Ставка проскальзывания входа в bps от notional входа.
     pub entry_slippage_bps: i128,
+    /// Ставка проскальзывания выхода в bps от notional выхода.
     pub exit_slippage_bps: i128,
+    pub entry_slippage_cost_bps: i128,
+    pub exit_slippage_cost_bps: i128,
     /// Заданное проскальзывание входа и выхода, в bps.
     pub round_trip_slippage_bps: i128,
     /// Суммарное финансирование за период удержания, в bps.
@@ -93,12 +101,6 @@ pub fn evaluate_round_trip(
     let exit_fee = i128::from(config.exit_fee_bps);
     let entry_slippage = i128::from(config.entry_slippage_bps);
     let exit_slippage = i128::from(config.exit_slippage_bps);
-    let fee = entry_fee
-        .checked_add(exit_fee)
-        .ok_or(EconomicError::ArithmeticOverflow)?;
-    let slippage = entry_slippage
-        .checked_add(exit_slippage)
-        .ok_or(EconomicError::ArithmeticOverflow)?;
     let funding = i128::from(config.funding_cost_bps);
 
     let mut first_quote: Option<&MarketEvent> = None;
@@ -190,6 +192,14 @@ pub fn evaluate_round_trip(
         .ok_or(EconomicError::ArithmeticOverflow)?;
     let gross = floor_div(numerator, i128::from(entry_price));
 
+    let exit_fee_cost = scale_exit_cost(exit_fee, exit_price, entry_price)?;
+    let exit_slippage_cost = scale_exit_cost(exit_slippage, exit_price, entry_price)?;
+    let fee = entry_fee
+        .checked_add(exit_fee_cost)
+        .ok_or(EconomicError::ArithmeticOverflow)?;
+    let slippage = entry_slippage
+        .checked_add(exit_slippage_cost)
+        .ok_or(EconomicError::ArithmeticOverflow)?;
     let total_cost = fee
         .checked_add(slippage)
         .and_then(|value| value.checked_add(funding))
@@ -217,15 +227,33 @@ pub fn evaluate_round_trip(
         gross_return_bps: gross,
         entry_fee_bps: entry_fee,
         exit_fee_bps: exit_fee,
+        entry_fee_cost_bps: entry_fee,
+        exit_fee_cost_bps: exit_fee_cost,
         round_trip_fee_bps: fee,
         entry_slippage_bps: entry_slippage,
         exit_slippage_bps: exit_slippage,
+        entry_slippage_cost_bps: entry_slippage,
+        exit_slippage_cost_bps: exit_slippage_cost,
         round_trip_slippage_bps: slippage,
         funding_cost_bps: funding,
         total_cost_bps: total_cost,
         net_return_bps: net,
         verdict,
     })
+}
+
+fn scale_exit_cost(rate_bps: i128, exit_price: i64, entry_price: i64) -> Result<i128, EconomicError> {
+    let numerator = rate_bps
+        .checked_mul(i128::from(exit_price))
+        .ok_or(EconomicError::ArithmeticOverflow)?;
+    let denominator = i128::from(entry_price);
+    let quotient = numerator / denominator;
+    let remainder = numerator % denominator;
+    if remainder == 0 {
+        Ok(quotient)
+    } else {
+        quotient.checked_add(1).ok_or(EconomicError::ArithmeticOverflow)
+    }
 }
 
 fn quote_bid(payload: &EventPayload) -> Result<i64, EconomicError> {
@@ -314,9 +342,11 @@ mod tests {
         assert_eq!(result.entry_price_ticks, 10_010);
         assert_eq!(result.exit_price_ticks, 10_200);
         assert_eq!(result.gross_return_bps, 189);
-        assert_eq!(result.round_trip_fee_bps, 4);
-        assert_eq!(result.round_trip_slippage_bps, 2);
-        assert_eq!(result.net_return_bps, 183);
+        assert_eq!(result.exit_fee_cost_bps, 3);
+        assert_eq!(result.round_trip_fee_bps, 5);
+        assert_eq!(result.exit_slippage_cost_bps, 2);
+        assert_eq!(result.round_trip_slippage_bps, 3);
+        assert_eq!(result.net_return_bps, 181);
         assert_eq!(result.verdict, EconomicVerdict::Positive);
     }
 
@@ -387,10 +417,12 @@ mod tests {
 
         assert_eq!(result.entry_fee_bps, 1);
         assert_eq!(result.exit_fee_bps, 5);
-        assert_eq!(result.round_trip_fee_bps, 6);
+        assert_eq!(result.exit_fee_cost_bps, 6);
+        assert_eq!(result.round_trip_fee_bps, 7);
         assert_eq!(result.entry_slippage_bps, 0);
         assert_eq!(result.exit_slippage_bps, 2);
-        assert_eq!(result.round_trip_slippage_bps, 2);
+        assert_eq!(result.exit_slippage_cost_bps, 3);
+        assert_eq!(result.round_trip_slippage_bps, 3);
     }
 
     #[test]
