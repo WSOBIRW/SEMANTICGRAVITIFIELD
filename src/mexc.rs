@@ -518,7 +518,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn creates_stable_local_event_id_when_exchange_id_is_absent() {
         let mut frame = deal();
