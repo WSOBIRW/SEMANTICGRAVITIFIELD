@@ -6,12 +6,16 @@ on:
       - main
       - foundation/**
       - implementation/**
-      - feat/**
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches:
       - main
       - foundation/**
-      - feat/**
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -56,4 +60,3 @@ jobs:
               )
             )
           ' "$RUNNER_TEMP/cargo-metadata.json" > /dev/null
-
