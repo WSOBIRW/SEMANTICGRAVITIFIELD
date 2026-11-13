@@ -39,7 +39,6 @@ pub enum MexcCaptureError {
     TooManyTrades,
 }
 
-
 /// Настраиваемые бюджеты чтения недоверенного capture JSONL.
 ///
 /// Значения по умолчанию допускают крупные кадры и глубокие книги.
@@ -103,10 +102,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
 
-    pub fn with_limits(
-        reader: R,
-        limits: MexcCaptureLimits,
-    ) -> Result<Self, MexcCaptureError> {
+    pub fn with_limits(reader: R, limits: MexcCaptureLimits) -> Result<Self, MexcCaptureError> {
         if limits.max_line_bytes == 0
             || limits.max_levels_per_side == 0
             || limits.max_trades_per_frame == 0
@@ -485,11 +481,7 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
             if let Some(item) = self.pending.pop_front() {
                 return Some(Ok(item));
             }
-            match read_line_bounded(
-                &mut self.reader,
-                &mut self.line,
-                self.limits.max_line_bytes,
-            ) {
+            match read_line_bounded(&mut self.reader, &mut self.line, self.limits.max_line_bytes) {
                 Ok(0) => return None,
                 Ok(_) => {}
                 Err(error) => {
@@ -519,7 +511,6 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
         }
     }
 }
-
 
 fn read_line_bounded<R: BufRead>(
     reader: &mut R,
@@ -839,7 +830,6 @@ mod tests {
         .join("\n")
             + "\n"
     }
-
 
     #[test]
     fn rejects_capture_lines_over_configured_byte_budget() {
