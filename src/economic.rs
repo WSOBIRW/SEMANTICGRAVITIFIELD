@@ -334,8 +334,8 @@ mod tests {
     #[test]
     fn negative_funding_cost_represents_funding_income() {
         let events = vec![
-            quote("q1", 1_000, 10_000, 10_010),
-            quote("q2", 2_000, 10_000, 10_010),
+            quote("q1", 1_000, 10_000, 10_000),
+            quote("q2", 2_000, 10_000, 10_000),
         ];
         let config = EconomicConfig {
             entry_fee_bps: 0,
