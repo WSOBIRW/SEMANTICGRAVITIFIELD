@@ -146,6 +146,7 @@ pub enum MexcObservationMetadata {
         position_action: MexcPositionAction,
         self_trade: MexcSelfTradeFlag,
         transaction_id: String,
+        trade_time_ms: i64,
         matching_engine_time_ms: Option<i64>,
     },
 }
@@ -308,7 +309,7 @@ pub fn normalize_deal(
         event_id,
         source_id: "mexc-futures".to_owned(),
         instrument_id: spec.symbol.clone(),
-        event_time_ms: frame.timestamp_ms,
+        event_time_ms: frame.matching_engine_time_ms.unwrap_or(frame.timestamp_ms),
         received_time_ms,
         sequence: None,
         payload: crate::event::EventPayload::Trade {
@@ -325,6 +326,7 @@ pub fn normalize_deal(
             position_action,
             self_trade,
             transaction_id: frame.transaction_id.clone(),
+            trade_time_ms: frame.timestamp_ms,
             matching_engine_time_ms: frame.matching_engine_time_ms,
         },
         raw_payload_sha256,
@@ -522,6 +524,7 @@ mod tests {
                 position_action: MexcPositionAction::Open,
                 self_trade: MexcSelfTradeFlag::No,
                 transaction_id: "tx-100".to_owned(),
+                trade_time_ms: 1_100,
                 matching_engine_time_ms: Some(1_099),
             }
         );
