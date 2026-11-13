@@ -16,6 +16,9 @@ pub enum MexcCaptureError {
     InvalidJson,
     MissingField,
     UnsupportedCaptureSchema(u64),
+    UnsupportedVenue,
+    UnsupportedMarket,
+    CaptureMarkedNonContiguous,
     MissingContractSpec,
     MissingDepthSnapshot,
     SymbolMismatch,
@@ -90,20 +93,58 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let record_type = string_field(&record, "record_type")?;
 
         match record_type {
-            "capture_start" => self.process_capture_start(&record),
-            "depth_snapshot" => self.process_depth_snapshot(&record),
-            "depth_delta" => self.process_depth_delta(&record),
-            "deal_frame" => self.process_deal_frame(&record),
-            // Метаданные, heartbeat, reference snapshots и capture_end
-            // не превращаются в Quote/Trade, но остаются в исходном JSONL.
+            "capture_start" => {
+                self.check_schema(&record)?;
+                self.process_capture_start(&record)
+            }
+            "depth_snapshot" => {
+                self.check_schema(&record)?;
+                self.process_depth_snapshot(&record)
+            }
+            "depth_delta" => {
+                self.check_schema(&record)?;
+                self.process_depth_delta(&record)
+            }
+            "deal_frame" => {
+                self.check_schema(&record)?;
+                self.process_deal_frame(&record)
+            }
+            "capture_end" => self.process_capture_end(&record),
+            // Метаданные, heartbeat и reference snapshots не превращаются
+            // в Quote/Trade, но остаются в исходном JSONL.
             _ => Ok(()),
         }
     }
 
-    fn process_capture_start(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
-        let schema = optional_u64(record.get("schema_version")).unwrap_or(1);
+
+    fn check_schema(&self, record: &Value) -> Result<(), MexcCaptureError> {
+        let schema = u64_field(record.get("schema_version"))?;
         if schema != 1 {
             return Err(MexcCaptureError::UnsupportedCaptureSchema(schema));
+        }
+        Ok(())
+    }
+
+    fn process_capture_end(&self, record: &Value) -> Result<(), MexcCaptureError> {
+        if record.get("depth_stream_contiguous").and_then(Value::as_bool) == Some(false)
+            || optional_u64(record.get("depth_sequence_gaps")).unwrap_or(0) > 0
+        {
+            return Err(MexcCaptureError::CaptureMarkedNonContiguous);
+        }
+        if record.get("private_api_used").and_then(Value::as_bool) == Some(true)
+            || record.get("orders_submitted").and_then(Value::as_bool) == Some(true)
+        {
+            return Err(MexcCaptureError::InvalidContractValue);
+        }
+        Ok(())
+    }
+
+    fn process_capture_start(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if string_field(record, "venue")? != "MEXC" {
+            return Err(MexcCaptureError::UnsupportedVenue);
+        }
+        if string_field(record, "market")? != "FUTURES_PERPETUAL" {
+            return Err(MexcCaptureError::UnsupportedMarket);
         }
         if record.get("private_api_used").and_then(Value::as_bool) == Some(true)
             || record.get("orders_submitted").and_then(Value::as_bool) == Some(true)
@@ -283,6 +324,11 @@ impl<R: BufRead> MexcCaptureReader<R> {
             .get("trades")
             .and_then(Value::as_array)
             .ok_or(MexcCaptureError::MissingField)?;
+        if optional_u64(record.get("trade_count"))
+            .is_some_and(|count| count != trades.len() as u64)
+        {
+            return Err(MexcCaptureError::InvalidTrade);
+        }
 
         for trade in trades {
             let price_ticks = i64_field(trade, "price_ticks")?;
@@ -582,6 +628,8 @@ mod tests {
         let start = json!({
             "record_type": "capture_start",
             "schema_version": 1,
+            "venue": "MEXC",
+            "market": "FUTURES_PERPETUAL",
             "symbol": "BTC_USDT",
             "initialized_at_ms": 900,
             "price_tick": "0.01",
@@ -606,6 +654,7 @@ mod tests {
             "captured_at_ms": 1006,
             "symbol": "BTC_USDT",
             "raw_payload": deal_raw,
+            "trade_count": 1,
             "trades": [{
                 "price_ticks": 10005,
                 "quantity_lots": 50,
@@ -690,6 +739,33 @@ mod tests {
                 trade_time_ms: 1_005,
                 matching_engine_time_ms: Some(1_004),
             }
+        );
+    }
+
+
+    #[test]
+    fn rejects_non_mexc_or_non_perpetual_capture() {
+        let lines = capture_lines(11).replace(r#""venue":"MEXC""#, r#""venue":"OTHER""#);
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::UnsupportedVenue));
+    }
+
+    #[test]
+    fn rejects_capture_end_marked_non_contiguous() {
+        let mut lines = capture_lines(11);
+        let end = json!({
+            "record_type": "capture_end",
+            "depth_sequence_gaps": 1,
+            "depth_stream_contiguous": false,
+            "private_api_used": false,
+            "orders_submitted": false
+        });
+        lines.push_str(&end.to_string());
+        lines.push('\n');
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::CaptureMarkedNonContiguous)
         );
     }
 
