@@ -58,8 +58,12 @@ pub struct EconomicAssessment {
     pub exit_price_ticks: i64,
     /// Валовой результат до издержек, в bps от цены входа.
     pub gross_return_bps: i128,
+    pub entry_fee_bps: i128,
+    pub exit_fee_bps: i128,
     /// Комиссия за вход и выход, в bps.
     pub round_trip_fee_bps: i128,
+    pub entry_slippage_bps: i128,
+    pub exit_slippage_bps: i128,
     /// Заданное проскальзывание входа и выхода, в bps.
     pub round_trip_slippage_bps: i128,
     /// Суммарное финансирование за период удержания, в bps.
@@ -211,8 +215,11 @@ pub fn evaluate_round_trip(
         entry_price_ticks: entry_price,
         exit_price_ticks: exit_price,
         gross_return_bps: gross,
+        entry_fee_bps: entry_fee,
+        exit_fee_bps: exit_fee,
         round_trip_fee_bps: fee,
-        round_trip_slippage_bps: slippage,
+        entry_slippage_bps: entry_slippage,
+        exit_slippage_bps: exit_slippage,
         funding_cost_bps: funding,
         total_cost_bps: total_cost,
         net_return_bps: net,
@@ -356,6 +363,75 @@ mod tests {
         assert!(result.gross_return_bps < 0);
         assert!(result.net_return_bps < result.gross_return_bps);
         assert_eq!(result.verdict, EconomicVerdict::Negative);
+    }
+
+
+    #[test]
+    fn reports_asymmetric_entry_and_exit_costs() {
+        let events = vec![
+            quote("q1", 1_000, 10_000, 10_010),
+            quote("q2", 2_000, 10_200, 10_210),
+        ];
+        let config = EconomicConfig {
+            entry_fee_bps: 1,
+            exit_fee_bps: 5,
+            entry_slippage_bps: 0,
+            exit_slippage_bps: 2,
+            funding_cost_bps: 0,
+        };
+        let result =
+            evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
+
+        assert_eq!(result.entry_fee_bps, 1);
+        assert_eq!(result.exit_fee_bps, 5);
+        assert_eq!(result.round_trip_fee_bps, 6);
+        assert_eq!(result.entry_slippage_bps, 0);
+        assert_eq!(result.exit_slippage_bps, 2);
+        assert_eq!(result.round_trip_slippage_bps, 2);
+    }
+
+    #[test]
+    fn ignores_quotes_outside_candidate_interval() {
+        let events = vec![
+            quote("q0", 500, 1_000, 1_010),
+            quote("q1", 1_000, 10_000, 10_010),
+            quote("q2", 2_000, 10_200, 10_210),
+            quote("q3", 3_000, 20_000, 20_010),
+        ];
+        let result =
+            evaluate_round_trip(&events, &candidate(PriceDirection::Up), config()).unwrap();
+
+        assert_eq!(result.entry_time_ms, 1_000);
+        assert_eq!(result.exit_time_ms, 2_000);
+    }
+
+    #[test]
+    fn rejects_mixed_quote_sources() {
+        let mut events = vec![
+            quote("q1", 1_000, 10_000, 10_010),
+            quote("q2", 2_000, 10_200, 10_210),
+        ];
+        events[1].source_id = "mexc-futures-rest".to_owned();
+
+        assert_eq!(
+            evaluate_round_trip(&events, &candidate(PriceDirection::Up), config()),
+            Err(EconomicError::MixedSources)
+        );
+    }
+
+    #[test]
+    fn rejects_candidate_with_inconsistent_direction() {
+        let events = vec![
+            quote("q1", 1_000, 10_000, 10_010),
+            quote("q2", 2_000, 10_200, 10_210),
+        ];
+        let mut invalid = candidate(PriceDirection::Up);
+        invalid.movement_bps = -100;
+
+        assert_eq!(
+            evaluate_round_trip(&events, &invalid, config()),
+            Err(EconomicError::InvalidCandidate)
+        );
     }
 
     #[test]
