@@ -12,7 +12,7 @@
 - Кандидат формируется только при выполнении явных порогов движения, спреда и числа сделок.
 - Кандидат не является торговым сигналом и не доказывает прибыльность. Модель комиссий, проскальзывания, ликвидности, независимой выборки и исполнения ещё не реализована.
 - Добавлены позитивные и негативные unit-тесты.
-- PR #15 открыт, код не входит в main. CI run #445 на HEAD `ecf3c756315ef0c087aad8364ec3a9d7a17c3e4a` остановился на rustfmt; форматирование исправлено в последующих commits. CI run #448 на HEAD `f168112ddf37fe437a67e859f417550a0fd4db5d` выявил только замечание rustfmt; исправлено. CI run #450 на точном HEAD `76aba71eeb0fbc0966c676bda163659051111957` завершился SUCCESS: rustfmt PASS, Clippy PASS, 52 unit tests PASS и 1 integration test PASS.
+- PR #15 открыт, код не входит в main. CI run #445 на HEAD `ecf3c756315ef0c087aad8364ec3a9d7a17c3e4a` остановился на rustfmt; форматирование исправлено в последующих commits. CI run #448 на HEAD `f168112ddf37fe437a67e859f417550a0fd4db5d` выявил замечание rustfmt; исправлено. CI run #450 на HEAD `76aba71eeb0fbc0966c676bda163659051111957` прошёл: rustfmt, Clippy, 52 unit tests и 1 integration test PASS. После уточнения конфигурации исследования и консервативного округления спреда CI run #454 на точном HEAD `79d84adedafb8c67f33bdd11d45310a960159c88` завершился SUCCESS: rustfmt PASS, Clippy PASS, 54 unit tests PASS и 1 integration test PASS.
 - Локальные Rust-проверки в этой рабочей среде не выполнялись: Rust toolchain недоступен.
 
 
