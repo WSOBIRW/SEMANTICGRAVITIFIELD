@@ -730,16 +730,10 @@ mod tests {
             + "\n"
     }
 
-
     #[test]
     fn preserves_exact_decimal_tokens_from_json_numbers() {
-        let spec = MexcContractSpec::from_steps(
-            "BTC_USDT",
-            "0.000000001",
-            "0.000000001",
-            "0.001",
-        )
-        .unwrap();
+        let spec = MexcContractSpec::from_steps("BTC_USDT", "0.000000001", "0.000000001", "0.001")
+            .unwrap();
         let raw: Value = serde_json::from_str(
             r#"{"bids":[[10000000.000000001,1,1]],"asks":[[10000000.000000002,1,1]]}"#,
         )
