@@ -6,8 +6,8 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{EventPayload, MarketEvent, Quote};
 use crate::mexc::{
-    parse_scaled_i64, parse_scaled_u64, MexcContractSpec, MexcObservation,
-    MexcObservationMetadata, MexcPositionAction, MexcSelfTradeFlag, MexcTradeSide,
+    parse_scaled_i64, parse_scaled_u64, MexcContractSpec, MexcObservation, MexcObservationMetadata,
+    MexcPositionAction, MexcSelfTradeFlag, MexcTradeSide,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -259,7 +259,10 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_deal_frame(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
-        let spec = self.spec.as_ref().ok_or(MexcCaptureError::MissingContractSpec)?;
+        let spec = self
+            .spec
+            .as_ref()
+            .ok_or(MexcCaptureError::MissingContractSpec)?;
         let symbol = string_field(record, "symbol")?;
         self.check_symbol(symbol)?;
         let captured_at_ms = i64_field(record, "captured_at_ms")?;
