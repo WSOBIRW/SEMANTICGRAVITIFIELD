@@ -770,7 +770,8 @@ mod tests {
                 trade_side: MexcTradeSide::Buy,
                 position_action: MexcPositionAction::Open,
                 self_trade: MexcSelfTradeFlag::No,
-                transaction_id: "tx-1".to_owned(),
+                transaction_id: Some("tx-1".to_owned()),
+                local_event_index: None,
                 trade_time_ms: 1_005,
                 matching_engine_time_ms: Some(1_004),
             }
