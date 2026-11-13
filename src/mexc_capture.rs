@@ -830,7 +830,6 @@ mod tests {
             + "\n"
     }
 
-
     #[test]
     fn rejects_delta_book_growth_over_configured_level_budget() {
         let spec = MexcContractSpec::from_steps("BTC_USDT", "0.01", "0.01", "0.001").unwrap();
