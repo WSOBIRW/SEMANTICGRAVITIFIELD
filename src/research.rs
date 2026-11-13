@@ -18,6 +18,7 @@ pub struct ResearchConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResearchError {
     InvalidConfig,
+    UnsupportedSchema(u16),
     EmptyWindow,
     EmptyInstrumentId,
     MixedInstruments,
@@ -117,6 +118,9 @@ pub fn analyze_market_window(
     let mut maximum_observed_spread_bps = None;
 
     for event in events {
+        if event.schema_version != 1 {
+            return Err(ResearchError::UnsupportedSchema(event.schema_version));
+        }
         if event.instrument_id.trim().is_empty() {
             return Err(ResearchError::EmptyInstrumentId);
         }
@@ -449,6 +453,22 @@ mod tests {
         assert_eq!(
             analyze_market_window(&events, invalid),
             Err(ResearchError::InvalidConfig)
+        );
+    }
+
+
+    #[test]
+    fn rejects_unsupported_event_schema_version() {
+        let mut events = vec![
+            quote("q1", 1, 10_000, 10_010),
+            trade("t1", 2, 10_000, 1),
+            trade("t2", 3, 10_100, 1),
+        ];
+        events[1].schema_version = 2;
+
+        assert_eq!(
+            analyze_market_window(&events, config()),
+            Err(ResearchError::UnsupportedSchema(2))
         );
     }
 
