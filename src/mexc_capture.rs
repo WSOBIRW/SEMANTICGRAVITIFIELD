@@ -533,7 +533,7 @@ fn read_line_bounded<R: BufRead>(
             if available.is_empty() {
                 return Ok(output.len());
             }
-            let newline = available.iter().position(|byte| *byte == b'\\n');
+            let newline = available.iter().position(|byte| *byte == b'\n');
             let count = newline.map_or(available.len(), |index| index + 1);
             if output.len().saturating_add(count) > max_bytes {
                 return Err(MexcCaptureError::LineTooLarge);
@@ -882,8 +882,8 @@ mod tests {
             r#"{"bids":[[10000000.000000001,1,1]],"asks":[[10000000.000000002,1,1]]}"#,
         )
         .unwrap();
-        let bids = parse_snapshot_levels(&raw["bids"], &spec).unwrap();
-        let asks = parse_snapshot_levels(&raw["asks"], &spec).unwrap();
+        let bids = parse_snapshot_levels(&raw["bids"], &spec, 100).unwrap();
+        let asks = parse_snapshot_levels(&raw["asks"], &spec, 100).unwrap();
         assert!(bids.contains_key(&10_000_000_000_000_001));
         assert!(asks.contains_key(&10_000_000_000_000_002));
     }
