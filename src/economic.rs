@@ -148,14 +148,8 @@ pub fn evaluate_round_trip(
     }
 
     let (entry_price, exit_price) = match candidate.direction {
-        PriceDirection::Up => (
-            quote_ask(&entry.payload)?,
-            quote_bid(&exit.payload)?,
-        ),
-        PriceDirection::Down => (
-            quote_bid(&entry.payload)?,
-            quote_ask(&exit.payload)?,
-        ),
+        PriceDirection::Up => (quote_ask(&entry.payload)?, quote_bid(&exit.payload)?),
+        PriceDirection::Down => (quote_bid(&entry.payload)?, quote_ask(&exit.payload)?),
         PriceDirection::Flat => return Err(EconomicError::NoCandidate),
     };
 
@@ -315,8 +309,7 @@ mod tests {
             slippage_bps_per_side: 0,
             funding_cost_bps: -3,
         };
-        let result =
-            evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
+        let result = evaluate_round_trip(&events, &candidate(PriceDirection::Up), config).unwrap();
 
         assert_eq!(result.funding_cost_bps, -3);
         assert_eq!(result.net_return_bps, -3);
