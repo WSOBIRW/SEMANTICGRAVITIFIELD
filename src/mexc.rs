@@ -598,6 +598,7 @@ mod tests {
                 position_action: MexcPositionAction::Other(4),
                 self_trade: MexcSelfTradeFlag::Other(5),
                 transaction_id: "tx-100".to_owned(),
+                trade_time_ms: 1_100,
                 matching_engine_time_ms: Some(1_099),
             }
         );
