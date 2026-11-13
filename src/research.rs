@@ -484,7 +484,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn rejects_mixed_sources_in_one_market_window() {
         let mut events = vec![
