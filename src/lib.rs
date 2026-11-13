@@ -8,6 +8,7 @@ pub mod economic;
 pub mod event;
 pub mod journal;
 pub mod mexc;
+pub mod mexc_capture;
 pub mod prevention;
 pub mod recovery;
 pub mod research;
@@ -21,10 +22,11 @@ pub use event::{EventPayload, MarketEvent, Quote};
 pub use journal::{
     encode_record, encode_reset_record, JournalCheckpoint, JournalError, ReplayReport,
 };
+pub use mexc_capture::{MexcCaptureError, MexcCaptureReader};
 pub use mexc::{
     normalize_deal, normalize_ticker, MexcContractSpec, MexcDealFrame, MexcError, MexcObservation,
-    MexcObservationMetadata, MexcPositionAction, MexcTickerFrame, MexcTradeSide,
-    MEXC_FUTURES_WS_JSON_ENDPOINT, MEXC_FUTURES_WS_PING_JSON,
+    MexcObservationMetadata, MexcPositionAction, MexcSelfTradeFlag, MexcTickerFrame,
+    MexcTradeSide,
 };
 pub use prevention::{ErrorPreventionEngine, Finding, FindingCode, PreventionReport, Severity};
 pub use recovery::{
