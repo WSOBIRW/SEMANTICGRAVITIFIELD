@@ -19,7 +19,6 @@ pub struct EconomicConfig {
 /// Ошибка оценки экономического результата.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EconomicError {
-    InvalidConfig,
     NoCandidate,
     MissingEntryQuote,
     MissingExitQuote,
@@ -28,6 +27,8 @@ pub enum EconomicError {
     UnsupportedSchema(u16),
     InvalidQuote,
     MixedPriceScales,
+    MixedSources,
+    InvalidCandidate,
     ArithmeticOverflow,
 }
 
@@ -46,6 +47,7 @@ pub enum EconomicVerdict {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EconomicAssessment {
     pub instrument_id: String,
+    pub source_id: String,
     pub direction: PriceDirection,
     pub entry_time_ms: i64,
     pub exit_time_ms: i64,
@@ -93,9 +95,16 @@ pub fn evaluate_round_trip(
     let mut price_scale: Option<u32> = None;
     let mut previous_quote_time_ms: Option<i64> = None;
     let mut quote_count = 0usize;
+    let mut source_id: Option<&str> = None;
 
     if candidate.end_time_ms <= candidate.start_time_ms {
         return Err(EconomicError::NonPositiveHoldingInterval);
+    }
+    if (candidate.direction == PriceDirection::Up && candidate.movement_bps <= 0)
+        || (candidate.direction == PriceDirection::Down && candidate.movement_bps >= 0)
+        || candidate.direction == PriceDirection::Flat
+    {
+        return Err(EconomicError::InvalidCandidate);
     }
 
     for event in events {
@@ -130,6 +139,13 @@ pub fn evaluate_round_trip(
                 }
             }
             previous_quote_time_ms = Some(event.event_time_ms);
+            match source_id {
+                Some(existing) if existing != event.source_id => {
+                    return Err(EconomicError::MixedSources);
+                }
+                None => source_id = Some(&event.source_id),
+                _ => {}
+            }
             quote_count += 1;
             if first_quote.is_none() {
                 first_quote = Some(event);
@@ -181,6 +197,7 @@ pub fn evaluate_round_trip(
 
     Ok(EconomicAssessment {
         instrument_id: candidate.instrument_id.clone(),
+        source_id: entry.source_id.clone(),
         direction: candidate.direction,
         entry_time_ms: entry.event_time_ms,
         exit_time_ms: exit.event_time_ms,
