@@ -290,7 +290,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
                 event_id: format!("mexc:{}:deal:{}", spec.symbol, transaction_id),
                 source_id: format!("mexc-futures:{}", self.capture_id.ok_or(MexcCaptureError::MissingContractSpec)?),
                 instrument_id: spec.symbol.clone(),
-                event_time_ms: trade_time_ms,
+                event_time_ms: matching_engine_time_ms.unwrap_or(trade_time_ms),
                 received_time_ms: captured_at_ms,
                 sequence: None,
                 payload: EventPayload::Trade {
@@ -307,6 +307,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
                     position_action,
                     self_trade,
                     transaction_id: transaction_id.to_owned(),
+                    trade_time_ms,
                     matching_engine_time_ms,
                 },
                 raw_payload_sha256: raw_hash,
@@ -618,7 +619,7 @@ mod tests {
 
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].event.event_time_ms, 1_000);
-        assert_eq!(events[1].event.event_time_ms, 1_005);
+        assert_eq!(events[1].event.event_time_ms, 1_004);
         assert_eq!(events[2].event.event_time_ms, 1_009);
 
         assert_eq!(
@@ -652,6 +653,7 @@ mod tests {
                 position_action: MexcPositionAction::Open,
                 self_trade: MexcSelfTradeFlag::No,
                 transaction_id: "tx-1".to_owned(),
+                trade_time_ms: 1_005,
                 matching_engine_time_ms: Some(1_004),
             }
         );
