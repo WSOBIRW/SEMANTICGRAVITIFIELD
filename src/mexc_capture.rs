@@ -32,6 +32,33 @@ pub enum MexcCaptureError {
     DuplicateLevel,
     InvalidTrade,
     InvalidTradeMetadata,
+    InvalidLimits,
+    LineTooLarge,
+    InvalidUtf8,
+    TooManyLevels,
+    TooManyTrades,
+}
+
+
+/// Настраиваемые бюджеты чтения недоверенного capture JSONL.
+///
+/// Значения по умолчанию допускают крупные кадры и глубокие книги.
+/// Ограничения можно увеличить для конкретного источника.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MexcCaptureLimits {
+    pub max_line_bytes: usize,
+    pub max_levels_per_side: usize,
+    pub max_trades_per_frame: usize,
+}
+
+impl Default for MexcCaptureLimits {
+    fn default() -> Self {
+        Self {
+            max_line_bytes: 16 * 1024 * 1024,
+            max_levels_per_side: 100_000,
+            max_trades_per_frame: 100_000,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -50,7 +77,8 @@ struct DepthBook {
 /// read_sorted(), который сортирует конечный capture по exchange event time.
 pub struct MexcCaptureReader<R: BufRead> {
     reader: R,
-    line: String,
+    line: Vec<u8>,
+    limits: MexcCaptureLimits,
     spec: Option<MexcContractSpec>,
     symbol: Option<String>,
     capture_id: Option<i64>,
@@ -63,7 +91,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
-            line: String::new(),
+            line: Vec::new(),
+            limits: MexcCaptureLimits::default(),
             spec: None,
             symbol: None,
             capture_id: None,
@@ -71,6 +100,30 @@ impl<R: BufRead> MexcCaptureReader<R> {
             pending: VecDeque::new(),
             failed: false,
         }
+    }
+
+
+    pub fn with_limits(
+        reader: R,
+        limits: MexcCaptureLimits,
+    ) -> Result<Self, MexcCaptureError> {
+        if limits.max_line_bytes == 0
+            || limits.max_levels_per_side == 0
+            || limits.max_trades_per_frame == 0
+        {
+            return Err(MexcCaptureError::InvalidLimits);
+        }
+        Ok(Self {
+            reader,
+            line: Vec::new(),
+            limits,
+            spec: None,
+            symbol: None,
+            capture_id: None,
+            book: DepthBook::default(),
+            pending: VecDeque::new(),
+            failed: false,
+        })
     }
 
     /// Собирает конечный capture в память и сортирует его по exchange event time.
@@ -201,10 +254,12 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let bids = parse_snapshot_levels(
             data.get("bids").ok_or(MexcCaptureError::MissingField)?,
             spec,
+            self.limits.max_levels_per_side,
         )?;
         let asks = parse_snapshot_levels(
             data.get("asks").ok_or(MexcCaptureError::MissingField)?,
             spec,
+            self.limits.max_levels_per_side,
         )?;
         self.book = DepthBook {
             bids,
@@ -275,11 +330,13 @@ impl<R: BufRead> MexcCaptureReader<R> {
             &mut self.book.bids,
             record.get("bids").ok_or(MexcCaptureError::MissingField)?,
             spec,
+            self.limits.max_levels_per_side,
         )?;
         apply_delta_levels(
             &mut self.book.asks,
             record.get("asks").ok_or(MexcCaptureError::MissingField)?,
             spec,
+            self.limits.max_levels_per_side,
         )?;
         self.book.version = Some(version);
 
@@ -326,6 +383,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
             .get("trades")
             .and_then(Value::as_array)
             .ok_or(MexcCaptureError::MissingField)?;
+        if trades.len() > self.limits.max_trades_per_frame {
+            return Err(MexcCaptureError::TooManyTrades);
+        }
         if optional_u64(record.get("trade_count")).is_some_and(|count| count != trades.len() as u64)
         {
             return Err(MexcCaptureError::InvalidTrade);
@@ -425,21 +485,65 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
             if let Some(item) = self.pending.pop_front() {
                 return Some(Ok(item));
             }
-            self.line.clear();
-            match self.reader.read_line(&mut self.line) {
+            match read_line_bounded(
+                &mut self.reader,
+                &mut self.line,
+                self.limits.max_line_bytes,
+            ) {
                 Ok(0) => return None,
-                Ok(_) if self.line.trim().is_empty() => continue,
                 Ok(_) => {}
-                Err(_) => {
+                Err(error) => {
                     self.failed = true;
-                    return Some(Err(MexcCaptureError::Io));
+                    return Some(Err(error));
                 }
             }
-            let line = self.line.clone();
-            if let Err(error) = self.process_line(&line) {
+            let bytes = std::mem::take(&mut self.line);
+            let line = match String::from_utf8(bytes) {
+                Ok(line) => line,
+                Err(error) => {
+                    self.line = error.into_bytes();
+                    self.failed = true;
+                    return Some(Err(MexcCaptureError::InvalidUtf8));
+                }
+            };
+            if line.trim().is_empty() {
+                self.line = line.into_bytes();
+                continue;
+            }
+            let result = self.process_line(&line);
+            self.line = line.into_bytes();
+            if let Err(error) = result {
                 self.failed = true;
                 return Some(Err(error));
             }
+        }
+    }
+}
+
+
+fn read_line_bounded<R: BufRead>(
+    reader: &mut R,
+    output: &mut Vec<u8>,
+    max_bytes: usize,
+) -> Result<usize, MexcCaptureError> {
+    output.clear();
+    loop {
+        let (consumed, found_newline) = {
+            let available = reader.fill_buf().map_err(|_| MexcCaptureError::Io)?;
+            if available.is_empty() {
+                return Ok(output.len());
+            }
+            let newline = available.iter().position(|byte| *byte == b'\\n');
+            let count = newline.map_or(available.len(), |index| index + 1);
+            if output.len().saturating_add(count) > max_bytes {
+                return Err(MexcCaptureError::LineTooLarge);
+            }
+            output.extend_from_slice(&available[..count]);
+            (count, newline.is_some())
+        };
+        reader.consume(consumed);
+        if found_newline {
+            return Ok(output.len());
         }
     }
 }
@@ -485,10 +589,14 @@ fn make_quote_observation(spec: &MexcContractSpec, frame: DepthQuoteFrame<'_>) -
 fn parse_snapshot_levels(
     value: &Value,
     spec: &MexcContractSpec,
+    max_levels: usize,
 ) -> Result<BTreeMap<i64, u64>, MexcCaptureError> {
     let levels = value
         .as_array()
         .ok_or(MexcCaptureError::InvalidDepthSnapshot)?;
+    if levels.len() > max_levels {
+        return Err(MexcCaptureError::TooManyLevels);
+    }
     let mut result = BTreeMap::new();
     for level in levels {
         let fields = level
@@ -523,6 +631,7 @@ fn apply_delta_levels(
     book_side: &mut BTreeMap<i64, u64>,
     value: &Value,
     spec: &MexcContractSpec,
+    max_levels: usize,
 ) -> Result<(), MexcCaptureError> {
     let levels = value
         .as_array()
@@ -538,6 +647,9 @@ fn apply_delta_levels(
             book_side.remove(&price);
         } else {
             book_side.insert(price, quantity);
+        }
+        if book_side.len() > max_levels {
+            return Err(MexcCaptureError::TooManyLevels);
         }
     }
     Ok(())
@@ -726,6 +838,40 @@ mod tests {
         ]
         .join("\n")
             + "\n"
+    }
+
+
+    #[test]
+    fn rejects_capture_lines_over_configured_byte_budget() {
+        let limits = MexcCaptureLimits {
+            max_line_bytes: 8,
+            ..MexcCaptureLimits::default()
+        };
+        let mut reader =
+            MexcCaptureReader::with_limits(Cursor::new(capture_lines(11)), limits).unwrap();
+        assert_eq!(reader.next(), Some(Err(MexcCaptureError::LineTooLarge)));
+    }
+
+    #[test]
+    fn rejects_depth_snapshots_over_configured_level_budget() {
+        let spec = MexcContractSpec::from_steps("BTC_USDT", "0.01", "0.01", "0.001").unwrap();
+        let levels = json!([["100.00", "1.00"], ["99.99", "1.00"]]);
+        assert_eq!(
+            parse_snapshot_levels(&levels, &spec, 1),
+            Err(MexcCaptureError::TooManyLevels)
+        );
+    }
+
+    #[test]
+    fn rejects_zero_capture_limits() {
+        let limits = MexcCaptureLimits {
+            max_line_bytes: 0,
+            ..MexcCaptureLimits::default()
+        };
+        assert!(matches!(
+            MexcCaptureReader::with_limits(Cursor::new(""), limits),
+            Err(MexcCaptureError::InvalidLimits)
+        ));
     }
 
     #[test]
