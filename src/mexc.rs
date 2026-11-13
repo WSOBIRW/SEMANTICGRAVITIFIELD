@@ -2,7 +2,6 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{MarketEvent, Quote};
 
-
 /// Метаданные одного MEXC Futures контракта.
 ///
 /// priceScale и volScale из MEXC contract metadata представлены здесь
@@ -21,7 +20,6 @@ pub struct MexcContractSpec {
 }
 
 impl MexcContractSpec {
-
     /// Создаёт спецификацию из priceUnit/volUnit MEXC или capture manifest.
     /// Десятичная точность выводится из шага без округления.
     pub fn from_steps(
@@ -223,7 +221,7 @@ pub fn normalize_ticker(
 
     let event = MarketEvent::quote(
         event_id,
-        "mexc-futures-ws",
+        "mexc-futures",
         spec.symbol.clone(),
         frame.timestamp_ms,
         received_time_ms,
@@ -237,7 +235,9 @@ pub fn normalize_ticker(
 
     Ok(MexcObservation {
         event,
-        metadata: MexcObservationMetadata::Quote { last_price_ticks },
+        metadata: MexcObservationMetadata::Quote {
+            last_price_ticks: Some(last_price_ticks),
+        },
         raw_payload_sha256,
         volume_scale_factor: spec.volume_scale_factor,
     })
@@ -245,7 +245,7 @@ pub fn normalize_ticker(
 
 /// Нормализует одну MEXC Futures сделку.
 ///
-/// Сторона агрессора, действие с позицией и флаг self-trade сохраняются
+/// Сторона сделки, действие с позицией и флаг self-trade сохраняются
 /// отдельно от базового MarketEvent, не теряясь при передаче в исследовательское ядро.
 pub fn normalize_deal(
     spec: &MexcContractSpec,
