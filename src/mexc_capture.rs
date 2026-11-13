@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn reads_capture_when_trade_id_is_absent() {
-        let lines = capture_lines(11).replace(r#""transaction_id":"tx-1","#, "");
+        let lines = capture_lines(11).replace(r#""transaction_id":"tx-1""#, "");
         let reader = MexcCaptureReader::new(Cursor::new(lines));
         let events = reader.read_sorted().unwrap();
         assert!(events[1].event.event_id.contains(":deal:local:900:1005:0:"));
