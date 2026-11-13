@@ -6,10 +6,16 @@ on:
       - main
       - foundation/**
       - implementation/**
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches:
       - main
       - foundation/**
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
 
 permissions:
   contents: read
