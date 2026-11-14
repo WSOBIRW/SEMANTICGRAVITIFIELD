@@ -141,7 +141,9 @@ pub fn evaluate_forward_round_trip(
             return Err(ForwardVerificationError::InvalidTimestamp);
         }
         if event.schema_version != 1 {
-            return Err(ForwardVerificationError::UnsupportedSchema(event.schema_version));
+            return Err(ForwardVerificationError::UnsupportedSchema(
+                event.schema_version,
+            ));
         }
         match candidate_source_id {
             Some(existing) if existing != event.source_id => {
