@@ -1050,9 +1050,9 @@ mod tests {
 
     #[test]
     fn rejects_capture_without_terminal_record() {
-        let mut lines = capture_lines(11);
-        let end_start = lines.rfind("{\"record_type\":\"capture_end\"").unwrap();
-        lines.truncate(end_start);
+        let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
+        records.pop();
+        let lines = records.join("\n");
         let reader = MexcCaptureReader::new(Cursor::new(lines));
         assert_eq!(
             reader.read_sorted(),
