@@ -1035,21 +1035,38 @@ mod tests {
 
     #[test]
     fn rejects_capture_end_marked_non_contiguous() {
-        let mut lines = capture_lines(11);
-        let end = json!({
-            "record_type": "capture_end",
-            "depth_sequence_gaps": 1,
-            "depth_stream_contiguous": false,
-            "private_api_used": false,
-            "orders_submitted": false
-        });
-        lines.push_str(&end.to_string());
-        lines.push('\n');
+        let lines = capture_lines(11).replace(
+            r#""depth_sequence_gaps":0,"#,
+            r#""depth_sequence_gaps":1,"#,
+        ).replace(
+            r#""depth_stream_contiguous":true"#,
+            r#""depth_stream_contiguous":false"#,
+        );
         let reader = MexcCaptureReader::new(Cursor::new(lines));
         assert_eq!(
             reader.read_sorted(),
             Err(MexcCaptureError::CaptureMarkedNonContiguous)
         );
+    }
+
+    #[test]
+    fn rejects_capture_without_terminal_record() {
+        let mut lines = capture_lines(11);
+        let end_start = lines.rfind("{\"record_type\":\"capture_end\"").unwrap();
+        lines.truncate(end_start);
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::MissingCaptureEnd)
+        );
+    }
+
+    #[test]
+    fn reads_three_field_depth_rows_using_contract_volume_not_order_count() {
+        let spec = MexcContractSpec::from_steps("BTC_USDT", "0.01", "0.01", "0.001").unwrap();
+        let levels = json!([["100.00", 1.00, 9]]);
+        let parsed = parse_snapshot_levels(&levels, &spec, 10).unwrap();
+        assert_eq!(parsed.get(&10_000), Some(&100));
     }
 
     #[test]
