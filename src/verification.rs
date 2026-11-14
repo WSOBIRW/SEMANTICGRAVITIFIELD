@@ -96,6 +96,113 @@ pub fn split_chronologically(
     Ok(result)
 }
 
+/// Ошибки причинной проверки исполнения после момента формирования сигнала.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForwardVerificationError {
+    InvalidHoldingPeriod,
+    MissingForwardEntry,
+    MissingForwardExit,
+    UnsupportedSchema(u16),
+    InvalidQuote,
+    OutOfOrderEvents,
+    MixedSources,
+    ArithmeticOverflow,
+    EconomicEvaluation,
+}
+
+/// Строит одну причинную проверку: сигнал уже сформирован к decision_time,
+/// вход выбирается только из более поздних доступных котировок, а выход —
+/// из первой котировки не раньше заданного горизонта удержания.
+///
+/// Важно: функция не подбирает горизонт по результатам теста и не моделирует
+/// очередь, глубину, задержку передачи ордера или гарантированное исполнение.
+/// Она устраняет конкретную утечку будущего в выборе входа/выхода.
+pub fn evaluate_forward_round_trip(
+    events: &[MarketEvent],
+    candidate: &crate::research::OpportunityCandidate,
+    holding_period_ms: i64,
+    config: crate::economic::EconomicConfig,
+) -> Result<crate::economic::EconomicAssessment, ForwardVerificationError> {
+    if holding_period_ms <= 0 || candidate.end_time_ms <= candidate.start_time_ms {
+        return Err(ForwardVerificationError::InvalidHoldingPeriod);
+    }
+
+    let decision_time_ms = candidate.end_time_ms;
+    let mut previous_event_time_ms = None;
+    let mut source_id: Option<&str> = None;
+    let mut entry: Option<&MarketEvent> = None;
+    let mut exit: Option<&MarketEvent> = None;
+    let mut exit_target_ms = None;
+
+    for event in events {
+        if event.instrument_id != candidate.instrument_id {
+            continue;
+        }
+        if let Some(previous) = previous_event_time_ms {
+            if event.event_time_ms < previous {
+                return Err(ForwardVerificationError::OutOfOrderEvents);
+            }
+        }
+        previous_event_time_ms = Some(event.event_time_ms);
+
+        if event.schema_version != 1 {
+            return Err(ForwardVerificationError::UnsupportedSchema(event.schema_version));
+        }
+
+        let crate::event::EventPayload::Quote {
+            bid_ticks,
+            ask_ticks,
+            price_scale,
+        } = &event.payload else {
+            continue;
+        };
+        if *price_scale == 0 || *bid_ticks <= 0 || *ask_ticks < *bid_ticks {
+            return Err(ForwardVerificationError::InvalidQuote);
+        }
+
+        match source_id {
+            Some(existing) if existing != event.source_id => {
+                return Err(ForwardVerificationError::MixedSources);
+            }
+            None => source_id = Some(&event.source_id),
+            _ => {}
+        }
+
+        if entry.is_none() {
+            // Котировка должна относиться к будущему относительно сигнала
+            // и быть получена не раньше момента принятия решения.
+            if event.event_time_ms >= decision_time_ms
+                && event.received_time_ms >= decision_time_ms
+            {
+                let target = event.received_time_ms
+                    .checked_add(holding_period_ms)
+                    .ok_or(ForwardVerificationError::ArithmeticOverflow)?;
+                entry = Some(event);
+                exit_target_ms = Some(target);
+            }
+            continue;
+        }
+
+        if exit.is_none()
+            && event.event_time_ms >= exit_target_ms.unwrap_or(i64::MAX)
+            && event.received_time_ms >= exit_target_ms.unwrap_or(i64::MAX)
+        {
+            exit = Some(event);
+            break;
+        }
+    }
+
+    let entry = entry.ok_or(ForwardVerificationError::MissingForwardEntry)?;
+    let exit = exit.ok_or(ForwardVerificationError::MissingForwardExit)?;
+
+    let mut forward_candidate = candidate.clone();
+    forward_candidate.start_time_ms = entry.event_time_ms;
+    forward_candidate.end_time_ms = exit.event_time_ms;
+
+    crate::economic::evaluate_round_trip(&[entry.clone(), exit.clone()], &forward_candidate, config)
+        .map_err(|_| ForwardVerificationError::EconomicEvaluation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
