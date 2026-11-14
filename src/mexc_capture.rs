@@ -531,7 +531,7 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
                         return Some(Err(MexcCaptureError::MissingCaptureEnd));
                     }
                     return None;
-                },
+                }
                 Ok(_) => {}
                 Err(error) => {
                     self.failed = true;
@@ -1058,7 +1058,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn rejects_snapshot_that_rewinds_depth_version() {
         let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
@@ -1103,7 +1102,10 @@ mod tests {
         lines.push_str(&trailing_delta.to_string());
         lines.push('\n');
         let reader = MexcCaptureReader::new(Cursor::new(lines));
-        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::CaptureNotActive));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::CaptureNotActive)
+        );
     }
 
     #[test]
@@ -1120,7 +1122,6 @@ mod tests {
             Err(MexcCaptureError::CaptureMarkedNonContiguous)
         );
     }
-
 
     #[test]
     fn streaming_iterator_reports_missing_capture_end() {
