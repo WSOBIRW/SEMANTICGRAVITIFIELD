@@ -1071,7 +1071,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn requires_schema_version_on_capture_start() {
         let lines = capture_lines(11).replacen(r#""schema_version":1,"#, "", 1);
@@ -1083,7 +1082,10 @@ mod tests {
     fn requires_explicit_no_private_api_and_no_orders_flags() {
         let lines = capture_lines(11).replacen(r#""private_api_used":false,"#, "", 1);
         let reader = MexcCaptureReader::new(Cursor::new(lines));
-        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::InvalidContractValue));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::InvalidContractValue)
+        );
     }
 
     #[test]
@@ -1091,7 +1093,10 @@ mod tests {
         let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
         let end = records.pop().unwrap();
         let mut end_value: Value = serde_json::from_str(&end).unwrap();
-        end_value.as_object_mut().unwrap().remove("orders_submitted");
+        end_value
+            .as_object_mut()
+            .unwrap()
+            .remove("orders_submitted");
         records.push(end_value.to_string());
         let reader = MexcCaptureReader::new(Cursor::new(records.join("\n")));
         assert_eq!(reader.read_sorted(), Err(MexcCaptureError::InvalidContractValue));
