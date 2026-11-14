@@ -13,8 +13,8 @@ pub mod prevention;
 pub mod recovery;
 pub mod research;
 pub mod snapshot;
-pub mod verification;
 pub mod validation;
+pub mod verification;
 
 pub use economic::{
     evaluate_round_trip, EconomicAssessment, EconomicConfig, EconomicError, EconomicVerdict,
@@ -38,7 +38,7 @@ pub use research::{
     ResearchConfig, ResearchError, ResearchReport,
 };
 pub use snapshot::SnapshotError;
+pub use validation::{EventValidator, ValidationError, ValidationWarning};
 pub use verification::{
     split_chronologically, ChronologicalSplit, ChronologicalSplitConfig, SplitError,
 };
-pub use validation::{EventValidator, ValidationError, ValidationWarning};
