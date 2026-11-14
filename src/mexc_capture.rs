@@ -1071,6 +1071,46 @@ mod tests {
         ));
     }
 
+
+    #[test]
+    fn requires_schema_version_on_capture_start() {
+        let lines = capture_lines(11).replacen(r#""schema_version":1,"#, "", 1);
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::MissingField));
+    }
+
+    #[test]
+    fn requires_explicit_no_private_api_and_no_orders_flags() {
+        let lines = capture_lines(11).replacen(r#""private_api_used":false,"#, "", 1);
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::InvalidContractValue));
+    }
+
+    #[test]
+    fn requires_no_orders_flag_at_capture_end() {
+        let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
+        let end = records.pop().unwrap();
+        let mut end_value: Value = serde_json::from_str(&end).unwrap();
+        end_value.as_object_mut().unwrap().remove("orders_submitted");
+        records.push(end_value.to_string());
+        let reader = MexcCaptureReader::new(Cursor::new(records.join("\n")));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::InvalidContractValue));
+    }
+
+    #[test]
+    fn rejects_empty_raw_deal_frame() {
+        let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
+        let deal_index = records
+            .iter()
+            .position(|line| line.contains(r#""record_type":"deal_frame""#))
+            .unwrap();
+        let mut deal: Value = serde_json::from_str(&records[deal_index]).unwrap();
+        deal["raw_payload"] = Value::String(String::new());
+        records[deal_index] = deal.to_string();
+        let reader = MexcCaptureReader::new(Cursor::new(records.join("\n")));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::EmptyRawPayload));
+    }
+
     #[test]
     fn rejects_snapshot_that_rewinds_depth_version() {
         let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
