@@ -178,9 +178,7 @@ impl<R: BufRead> MexcCaptureReader<R> {
         // Capture schema is declared by capture_start. Older producer records
         // do not repeat schema_version on every JSONL line.
         if let Some(value) = record.get("schema_version") {
-            let schema = value
-                .as_u64()
-                .ok_or(MexcCaptureError::MissingField)?;
+            let schema = value.as_u64().ok_or(MexcCaptureError::MissingField)?;
             if schema != 1 {
                 return Err(MexcCaptureError::UnsupportedCaptureSchema(schema));
             }
@@ -1035,13 +1033,12 @@ mod tests {
 
     #[test]
     fn rejects_capture_end_marked_non_contiguous() {
-        let lines = capture_lines(11).replace(
-            r#""depth_sequence_gaps":0,"#,
-            r#""depth_sequence_gaps":1,"#,
-        ).replace(
-            r#""depth_stream_contiguous":true"#,
-            r#""depth_stream_contiguous":false"#,
-        );
+        let lines = capture_lines(11)
+            .replace(r#""depth_sequence_gaps":0,"#, r#""depth_sequence_gaps":1,"#)
+            .replace(
+                r#""depth_stream_contiguous":true"#,
+                r#""depth_stream_contiguous":false"#,
+            );
         let reader = MexcCaptureReader::new(Cursor::new(lines));
         assert_eq!(
             reader.read_sorted(),
