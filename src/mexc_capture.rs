@@ -40,6 +40,7 @@ pub enum MexcCaptureError {
     CaptureAlreadyActive,
     CaptureNotActive,
     MissingCaptureEnd,
+    DepthSnapshotVersionRewind { current: u64, actual: u64 },
 }
 
 /// Настраиваемые бюджеты чтения недоверенного capture JSONL.
@@ -250,6 +251,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_depth_snapshot(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if !self.capture_active {
+            return Err(MexcCaptureError::CaptureNotActive);
+        }
         let spec = self
             .spec
             .as_ref()
@@ -270,6 +274,14 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let record_version = u64_field(record.get("version"))?;
         if raw_version != record_version {
             return Err(MexcCaptureError::InvalidDepthSnapshot);
+        }
+        if let Some(current) = self.book.version {
+            if record_version < current {
+                return Err(MexcCaptureError::DepthSnapshotVersionRewind {
+                    current,
+                    actual: record_version,
+                });
+            }
         }
 
         let bids = parse_snapshot_levels(
@@ -312,6 +324,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_depth_delta(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if !self.capture_active {
+            return Err(MexcCaptureError::CaptureNotActive);
+        }
         let spec = self
             .spec
             .as_ref()
@@ -388,6 +403,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn process_deal_frame(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if !self.capture_active {
+            return Err(MexcCaptureError::CaptureNotActive);
+        }
         let spec = self
             .spec
             .as_ref()
@@ -507,7 +525,13 @@ impl<R: BufRead> Iterator for MexcCaptureReader<R> {
                 return Some(Ok(item));
             }
             match read_line_bounded(&mut self.reader, &mut self.line, self.limits.max_line_bytes) {
-                Ok(0) => return None,
+                Ok(0) => {
+                    if self.capture_active {
+                        self.failed = true;
+                        return Some(Err(MexcCaptureError::MissingCaptureEnd));
+                    }
+                    return None;
+                },
                 Ok(_) => {}
                 Err(error) => {
                     self.failed = true;
@@ -1046,6 +1070,18 @@ mod tests {
             reader.read_sorted(),
             Err(MexcCaptureError::CaptureMarkedNonContiguous)
         );
+    }
+
+
+    #[test]
+    fn streaming_iterator_reports_missing_capture_end() {
+        let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
+        records.pop();
+        let lines = records.join("\n");
+        let mut reader = MexcCaptureReader::new(Cursor::new(lines));
+        while let Some(item) = reader.next() {
+            assert!(item.is_ok());
+        }
     }
 
     #[test]
