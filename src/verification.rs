@@ -1,3 +1,5 @@
+[Reading 426 lines from start (total: 426 lines, 0 remaining)]
+
 use crate::event::MarketEvent;
 
 /// Границы временного разделения данных для проверки вне обучающего периода.
@@ -146,14 +148,17 @@ pub fn evaluate_forward_round_trip(
         previous_event_time_ms = Some(event.event_time_ms);
 
         if event.schema_version != 1 {
-            return Err(ForwardVerificationError::UnsupportedSchema(event.schema_version));
+            return Err(ForwardVerificationError::UnsupportedSchema(
+                event.schema_version,
+            ));
         }
 
         let crate::event::EventPayload::Quote {
             bid_ticks,
             ask_ticks,
             price_scale,
-        } = &event.payload else {
+        } = &event.payload
+        else {
             continue;
         };
         if *price_scale == 0 || *bid_ticks <= 0 || *ask_ticks < *bid_ticks {
@@ -171,10 +176,10 @@ pub fn evaluate_forward_round_trip(
         if entry.is_none() {
             // Котировка должна относиться к будущему относительно сигнала
             // и быть получена не раньше момента принятия решения.
-            if event.event_time_ms >= decision_time_ms
-                && event.received_time_ms >= decision_time_ms
+            if event.event_time_ms >= decision_time_ms && event.received_time_ms >= decision_time_ms
             {
-                let target = event.received_time_ms
+                let target = event
+                    .received_time_ms
                     .checked_add(holding_period_ms)
                     .ok_or(ForwardVerificationError::ArithmeticOverflow)?;
                 entry = Some(event);
@@ -326,7 +331,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod forward_execution_tests {
     use super::*;
@@ -334,7 +338,13 @@ mod forward_execution_tests {
     use crate::event::Quote;
     use crate::research::{OpportunityCandidate, PriceDirection};
 
-    fn quote(id: &str, event_time_ms: i64, received_time_ms: i64, bid: i64, ask: i64) -> MarketEvent {
+    fn quote(
+        id: &str,
+        event_time_ms: i64,
+        received_time_ms: i64,
+        bid: i64,
+        ask: i64,
+    ) -> MarketEvent {
         MarketEvent::quote(
             id,
             "test-source",
@@ -342,7 +352,11 @@ mod forward_execution_tests {
             event_time_ms,
             received_time_ms,
             None,
-            Quote { bid_ticks: bid, ask_ticks: ask, price_scale: 100_000 },
+            Quote {
+                bid_ticks: bid,
+                ask_ticks: ask,
+                price_scale: 100_000,
+            },
         )
     }
 
@@ -412,3 +426,5 @@ mod forward_execution_tests {
         );
     }
 }
+
+[executed on device: wmw (1f41fbf4-2bdb-4ae6-b2d0-3de204c97d26)]
