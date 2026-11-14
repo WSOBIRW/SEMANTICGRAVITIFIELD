@@ -37,6 +37,9 @@ pub enum MexcCaptureError {
     InvalidUtf8,
     TooManyLevels,
     TooManyTrades,
+    CaptureAlreadyActive,
+    CaptureNotActive,
+    MissingCaptureEnd,
 }
 
 /// Настраиваемые бюджеты чтения недоверенного capture JSONL.
@@ -81,6 +84,8 @@ pub struct MexcCaptureReader<R: BufRead> {
     spec: Option<MexcContractSpec>,
     symbol: Option<String>,
     capture_id: Option<i64>,
+    capture_active: bool,
+    completed_capture: bool,
     book: DepthBook,
     pending: VecDeque<MexcObservation>,
     failed: bool,
@@ -95,6 +100,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
             spec: None,
             symbol: None,
             capture_id: None,
+            capture_active: false,
+            completed_capture: false,
             book: DepthBook::default(),
             pending: VecDeque::new(),
             failed: false,
@@ -128,8 +135,11 @@ impl<R: BufRead> MexcCaptureReader<R> {
         for item in self.by_ref() {
             observations.push(item?);
         }
-        if self.spec.is_none() {
-            return Err(MexcCaptureError::MissingContractSpec);
+        if self.capture_active {
+            return Err(MexcCaptureError::MissingCaptureEnd);
+        }
+        if !self.completed_capture {
+            return Err(MexcCaptureError::MissingCaptureEnd);
         }
         observations.sort_by_key(|item| (item.event.event_time_ms, item.event.received_time_ms));
         Ok(observations)
@@ -165,18 +175,27 @@ impl<R: BufRead> MexcCaptureReader<R> {
     }
 
     fn check_schema(&self, record: &Value) -> Result<(), MexcCaptureError> {
-        let schema = u64_field(record.get("schema_version"))?;
-        if schema != 1 {
-            return Err(MexcCaptureError::UnsupportedCaptureSchema(schema));
+        // Capture schema is declared by capture_start. Older producer records
+        // do not repeat schema_version on every JSONL line.
+        if let Some(value) = record.get("schema_version") {
+            let schema = value
+                .as_u64()
+                .ok_or(MexcCaptureError::MissingField)?;
+            if schema != 1 {
+                return Err(MexcCaptureError::UnsupportedCaptureSchema(schema));
+            }
         }
         Ok(())
     }
 
-    fn process_capture_end(&self, record: &Value) -> Result<(), MexcCaptureError> {
+    fn process_capture_end(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if !self.capture_active {
+            return Err(MexcCaptureError::CaptureNotActive);
+        }
         if record
             .get("depth_stream_contiguous")
             .and_then(Value::as_bool)
-            == Some(false)
+            != Some(true)
             || optional_u64(record.get("depth_sequence_gaps")).unwrap_or(0) > 0
         {
             return Err(MexcCaptureError::CaptureMarkedNonContiguous);
@@ -186,10 +205,15 @@ impl<R: BufRead> MexcCaptureReader<R> {
         {
             return Err(MexcCaptureError::InvalidContractValue);
         }
+        self.capture_active = false;
+        self.completed_capture = true;
         Ok(())
     }
 
     fn process_capture_start(&mut self, record: &Value) -> Result<(), MexcCaptureError> {
+        if self.capture_active {
+            return Err(MexcCaptureError::CaptureAlreadyActive);
+        }
         if string_field(record, "venue")? != "MEXC" {
             return Err(MexcCaptureError::UnsupportedVenue);
         }
@@ -216,6 +240,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
             return Err(MexcCaptureError::InvalidTimestamp);
         }
         self.capture_id = Some(capture_id);
+        self.capture_active = true;
+        self.completed_capture = false;
         self.symbol = Some(symbol);
         self.spec = Some(spec);
         self.book = DepthBook::default();
@@ -593,8 +619,7 @@ fn parse_snapshot_levels(
             .as_array()
             .ok_or(MexcCaptureError::InvalidDepthSnapshot)?;
         let quantity_index = match fields.len() {
-            2 => 1,
-            3 => 2,
+            2 | 3 => 1,
             _ => return Err(MexcCaptureError::InvalidDepthSnapshot),
         };
         let price = decimal_string(&fields[0])?;
@@ -771,10 +796,9 @@ mod tests {
             "private_api_used": false,
             "orders_submitted": false
         });
-        let snapshot_raw = r#"{"success":true,"data":{"version":10,"asks":[[100.10,1,1.00]],"bids":[[100.00,1,1.00]]},"ts":1000}"#;
+        let snapshot_raw = r#"{"success":true,"data":{"version":10,"asks":[[100.10,1.00,7]],"bids":[[100.00,1.00,9]]},"ts":1000}"#;
         let snapshot = json!({
             "record_type": "depth_snapshot",
-            "schema_version": 1,
             "captured_at_ms": 1001,
             "symbol": "BTC_USDT",
             "version": 10,
@@ -784,7 +808,6 @@ mod tests {
         let deal_raw = r#"{"channel":"push.deal","symbol":"BTC_USDT"}"#;
         let deals = json!({
             "record_type": "deal_frame",
-            "schema_version": 1,
             "captured_at_ms": 1006,
             "symbol": "BTC_USDT",
             "raw_payload": deal_raw,
@@ -803,7 +826,6 @@ mod tests {
         let delta_raw = r#"{"channel":"push.depth","symbol":"BTC_USDT"}"#;
         let delta = json!({
             "record_type": "depth_delta",
-            "schema_version": 1,
             "captured_at_ms": 1011,
             "symbol": "BTC_USDT",
             "begin": sequence_begin,
@@ -820,11 +842,19 @@ mod tests {
             "raw_payload": delta_raw
         });
 
+        let end = json!({
+            "record_type": "capture_end",
+            "depth_sequence_gaps": 0,
+            "depth_stream_contiguous": true,
+            "private_api_used": false,
+            "orders_submitted": false
+        });
         [
             start.to_string(),
             snapshot.to_string(),
             deals.to_string(),
             delta.to_string(),
+            end.to_string(),
         ]
         .join("\n")
             + "\n"
