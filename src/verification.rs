@@ -107,6 +107,7 @@ pub enum ForwardVerificationError {
     OutOfOrderEvents,
     MixedSources,
     ArithmeticOverflow,
+    InvalidTimestamp,
     EconomicEvaluation,
 }
 
@@ -127,7 +128,31 @@ pub fn evaluate_forward_round_trip(
         return Err(ForwardVerificationError::InvalidHoldingPeriod);
     }
 
-    let decision_time_ms = candidate.end_time_ms;
+    // Сигнал не может считаться сформированным раньше получения всех
+    // событий, использованных при построении кандидата.
+    let mut decision_time_ms = candidate.end_time_ms;
+    let mut candidate_source_id: Option<&str> = None;
+    for event in events.iter().filter(|event| {
+        event.instrument_id == candidate.instrument_id
+            && event.event_time_ms >= candidate.start_time_ms
+            && event.event_time_ms <= candidate.end_time_ms
+    }) {
+        if event.event_time_ms < 0 || event.received_time_ms < 0 {
+            return Err(ForwardVerificationError::InvalidTimestamp);
+        }
+        if event.schema_version != 1 {
+            return Err(ForwardVerificationError::UnsupportedSchema(event.schema_version));
+        }
+        match candidate_source_id {
+            Some(existing) if existing != event.source_id => {
+                return Err(ForwardVerificationError::MixedSources);
+            }
+            None => candidate_source_id = Some(&event.source_id),
+            _ => {}
+        }
+        decision_time_ms = decision_time_ms.max(event.received_time_ms);
+    }
+
     let mut previous_event_time_ms = None;
     let mut source_id: Option<&str> = None;
     let mut entry: Option<&MarketEvent> = None;
@@ -135,7 +160,9 @@ pub fn evaluate_forward_round_trip(
     let mut exit_target_ms = None;
 
     for event in events {
-        if event.instrument_id != candidate.instrument_id {
+        if event.instrument_id != candidate.instrument_id
+            || candidate_source_id.is_some_and(|source| source != event.source_id)
+        {
             continue;
         }
         if let Some(previous) = previous_event_time_ms {
