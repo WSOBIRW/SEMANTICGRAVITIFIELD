@@ -5,7 +5,7 @@ use std::io::BufReader;
 use std::process;
 
 use semantic_gravity_field::{
-    analyze_market_window, evaluate_round_trip, EconomicConfig, MarketEvent, MexcCaptureReader,
+    analyze_market_window, evaluate_forward_round_trip, EconomicConfig, MarketEvent, MexcCaptureReader,
     PriceDirection, ResearchConfig,
 };
 use serde_json::{json, Value};
@@ -54,6 +54,15 @@ fn run() -> Result<(), String> {
             })
         })
         .transpose()?;
+    let holding_period_ms = if economic.is_some() {
+        let value = required_i64(&config_json, "holding_period_ms")?;
+        if value <= 0 {
+            return Err("holding_period_ms должен быть больше нуля".to_owned());
+        }
+        Some(value)
+    } else {
+        None
+    };
 
     let input = File::open(&args[0])
         .map_err(|error| format!("не удалось открыть capture {}: {error}", args[0]))?;
@@ -86,7 +95,7 @@ fn run() -> Result<(), String> {
             .ok_or_else(|| "пустая группа источника".to_owned())?
             .event_time_ms;
         let mut windows: BTreeMap<u64, Vec<MarketEvent>> = BTreeMap::new();
-        for event in events {
+        for event in &events {
             let elapsed = event
                 .event_time_ms
                 .checked_sub(origin)
@@ -97,7 +106,7 @@ fn run() -> Result<(), String> {
             let index = u64::try_from(elapsed)
                 .map_err(|_| "временной интервал выходит за допустимый диапазон".to_owned())?
                 / window_ms;
-            windows.entry(index).or_default().push(event);
+            windows.entry(index).or_default().push(event.clone());
         }
 
         for (index, window_events) in windows {
@@ -108,7 +117,12 @@ fn run() -> Result<(), String> {
                 continue;
             };
             let (economic_result, economic_error, economic_status) = match economic {
-                Some(config) => match evaluate_round_trip(&window_events, &candidate, config) {
+                Some(config) => match evaluate_forward_round_trip(
+                    &events,
+                    &candidate,
+                    holding_period_ms.expect("holding_period_ms проверен при чтении конфигурации"),
+                    config,
+                ) {
                     Ok(value) => {
                         match value.verdict {
                             semantic_gravity_field::EconomicVerdict::Positive => {
@@ -133,7 +147,7 @@ fn run() -> Result<(), String> {
                                 "exit_price_ticks": value.exit_price_ticks
                             })),
                             None,
-                            "PRELIMINARY_TOP_OF_BOOK_ESTIMATE",
+                            "FORWARD_TOP_OF_BOOK_ESTIMATE",
                         )
                     }
                     Err(error) => (None, Some(format!("{error:?}")), "EVALUATION_FAILED"),
