@@ -111,9 +111,15 @@ fn run() -> Result<(), String> {
                 Some(config) => match evaluate_round_trip(&window_events, &candidate, config) {
                     Ok(value) => {
                         match value.verdict {
-                            semantic_gravity_field::EconomicVerdict::Positive => positive_count += 1,
-                            semantic_gravity_field::EconomicVerdict::Negative => negative_count += 1,
-                            semantic_gravity_field::EconomicVerdict::BreakEven => break_even_count += 1,
+                            semantic_gravity_field::EconomicVerdict::Positive => {
+                                positive_count += 1
+                            }
+                            semantic_gravity_field::EconomicVerdict::Negative => {
+                                negative_count += 1
+                            }
+                            semantic_gravity_field::EconomicVerdict::BreakEven => {
+                                break_even_count += 1
+                            }
                         }
                         (
                             Some(json!({
