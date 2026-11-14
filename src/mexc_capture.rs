@@ -32,6 +32,7 @@ pub enum MexcCaptureError {
     DuplicateLevel,
     InvalidTrade,
     InvalidTradeMetadata,
+    EmptyRawPayload,
     InvalidLimits,
     LineTooLarge,
     InvalidUtf8,
@@ -155,7 +156,10 @@ impl<R: BufRead> MexcCaptureReader<R> {
 
         match record_type {
             "capture_start" => {
-                self.check_schema(&record)?;
+                let schema = u64_field(record.get("schema_version"))?;
+                if schema != 1 {
+                    return Err(MexcCaptureError::UnsupportedCaptureSchema(schema));
+                }
                 self.process_capture_start(&record)
             }
             "depth_snapshot" => {
@@ -197,12 +201,12 @@ impl<R: BufRead> MexcCaptureReader<R> {
             .get("depth_stream_contiguous")
             .and_then(Value::as_bool)
             != Some(true)
-            || optional_u64(record.get("depth_sequence_gaps")).unwrap_or(0) > 0
+            || u64_field(record.get("depth_sequence_gaps"))? > 0
         {
             return Err(MexcCaptureError::CaptureMarkedNonContiguous);
         }
-        if record.get("private_api_used").and_then(Value::as_bool) == Some(true)
-            || record.get("orders_submitted").and_then(Value::as_bool) == Some(true)
+        if record.get("private_api_used").and_then(Value::as_bool) != Some(false)
+            || record.get("orders_submitted").and_then(Value::as_bool) != Some(false)
         {
             return Err(MexcCaptureError::InvalidContractValue);
         }
@@ -221,8 +225,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
         if string_field(record, "market")? != "FUTURES_PERPETUAL" {
             return Err(MexcCaptureError::UnsupportedMarket);
         }
-        if record.get("private_api_used").and_then(Value::as_bool) == Some(true)
-            || record.get("orders_submitted").and_then(Value::as_bool) == Some(true)
+        if record.get("private_api_used").and_then(Value::as_bool) != Some(false)
+            || record.get("orders_submitted").and_then(Value::as_bool) != Some(false)
         {
             return Err(MexcCaptureError::InvalidContractValue);
         }
@@ -264,6 +268,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let captured_at_ms = i64_field(record, "captured_at_ms")?;
         let server_time_ms = optional_i64(record.get("server_time_ms"));
         let raw_payload = string_field(record, "raw_payload")?;
+        if raw_payload.is_empty() {
+            return Err(MexcCaptureError::EmptyRawPayload);
+        }
         let raw: Value = serde_json::from_str(raw_payload)
             .map_err(|_| MexcCaptureError::InvalidDepthSnapshot)?;
         let data = raw
@@ -361,6 +368,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
         let matching_engine_time_ms = optional_i64(record.get("matching_engine_time_ms"));
         let server_time_ms = optional_i64(record.get("server_time_ms"));
         let raw_payload = string_field(record, "raw_payload")?;
+        if raw_payload.is_empty() {
+            return Err(MexcCaptureError::EmptyRawPayload);
+        }
 
         apply_delta_levels(
             &mut self.book.bids,
@@ -417,6 +427,9 @@ impl<R: BufRead> MexcCaptureReader<R> {
             return Err(MexcCaptureError::InvalidTimestamp);
         }
         let raw_payload = string_field(record, "raw_payload")?;
+        if raw_payload.is_empty() {
+            return Err(MexcCaptureError::EmptyRawPayload);
+        }
         let raw_hash = payload_hash(raw_payload);
         let trades = record
             .get("trades")
