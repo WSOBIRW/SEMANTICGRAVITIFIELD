@@ -1,5 +1,3 @@
-[Reading 426 lines from start (total: 426 lines, 0 remaining)]
-
 use crate::event::MarketEvent;
 
 /// Границы временного разделения данных для проверки вне обучающего периода.
