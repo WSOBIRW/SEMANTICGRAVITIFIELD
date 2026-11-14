@@ -425,4 +425,3 @@ mod forward_execution_tests {
     }
 }
 
-[executed on device: wmw (1f41fbf4-2bdb-4ae6-b2d0-3de204c97d26)]
