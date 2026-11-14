@@ -6,7 +6,7 @@ use std::process;
 
 use serde_json::{json, Value};
 use semantic_gravity_field::{
-    analyze_market_window, evaluate_round_trip, EconomicConfig, EventPayload, MarketEvent,
+    analyze_market_window, evaluate_round_trip, EconomicConfig, MarketEvent,
     MexcCaptureReader, PriceDirection, ResearchConfig,
 };
 
