@@ -4,11 +4,11 @@ use std::fs::File;
 use std::io::BufReader;
 use std::process;
 
-use serde_json::{json, Value};
 use semantic_gravity_field::{
-    analyze_market_window, evaluate_round_trip, EconomicConfig, MarketEvent,
-    MexcCaptureReader, PriceDirection, ResearchConfig,
+    analyze_market_window, evaluate_round_trip, EconomicConfig, MarketEvent, MexcCaptureReader,
+    PriceDirection, ResearchConfig,
 };
+use serde_json::{json, Value};
 
 fn main() {
     if let Err(error) = run() {
