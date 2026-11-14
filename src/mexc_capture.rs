@@ -122,6 +122,8 @@ impl<R: BufRead> MexcCaptureReader<R> {
             spec: None,
             symbol: None,
             capture_id: None,
+            capture_active: false,
+            completed_capture: false,
             book: DepthBook::default(),
             pending: VecDeque::new(),
             failed: false,
