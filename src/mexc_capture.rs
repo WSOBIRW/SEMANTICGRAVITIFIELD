@@ -904,6 +904,7 @@ mod tests {
         let mut reader = MexcCaptureReader::new(Cursor::new(""));
         reader.symbol = Some(spec.symbol.clone());
         reader.capture_id = Some(900);
+        reader.capture_active = true;
         reader.spec = Some(spec);
         reader.limits.max_trades_per_frame = 1;
         let trade = json!({
@@ -1057,6 +1058,54 @@ mod tests {
         ));
     }
 
+
+    #[test]
+    fn rejects_snapshot_that_rewinds_depth_version() {
+        let mut records: Vec<String> = capture_lines(11).lines().map(str::to_owned).collect();
+        let end = records.pop().unwrap();
+        let stale_snapshot = json!({
+            "record_type": "depth_snapshot",
+            "captured_at_ms": 1012,
+            "symbol": "BTC_USDT",
+            "version": 9,
+            "server_time_ms": 1012,
+            "raw_payload": r#"{"success":true,"data":{"version":9,"asks":[[100.10,1.00,7]],"bids":[[100.00,1.00,9]]},"ts":1012}"#
+        });
+        records.push(stale_snapshot.to_string());
+        records.push(end);
+        let reader = MexcCaptureReader::new(Cursor::new(records.join("\n")));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::DepthSnapshotVersionRewind {
+                current: 11,
+                actual: 9,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_market_records_after_capture_end() {
+        let mut lines = capture_lines(11);
+        let trailing_delta = json!({
+            "record_type": "depth_delta",
+            "symbol": "BTC_USDT",
+            "captured_at_ms": 1012,
+            "begin": 12,
+            "end": 12,
+            "version": 12,
+            "sequence_contiguous_from_previous": true,
+            "matching_engine_time_ms": 1012,
+            "server_time_ms": 1012,
+            "bids": [],
+            "asks": [],
+            "raw_payload": r#"{"channel":"push.depth","symbol":"BTC_USDT"}"#
+        });
+        lines.push_str(&trailing_delta.to_string());
+        lines.push('\n');
+        let reader = MexcCaptureReader::new(Cursor::new(lines));
+        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::CaptureNotActive));
+    }
+
     #[test]
     fn rejects_capture_end_marked_non_contiguous() {
         let lines = capture_lines(11)
@@ -1079,9 +1128,17 @@ mod tests {
         records.pop();
         let lines = records.join("\n");
         let mut reader = MexcCaptureReader::new(Cursor::new(lines));
-        while let Some(item) = reader.next() {
-            assert!(item.is_ok());
+        loop {
+            match reader.next() {
+                Some(Ok(_)) => {}
+                Some(Err(error)) => {
+                    assert_eq!(error, MexcCaptureError::MissingCaptureEnd);
+                    break;
+                }
+                None => panic!("iterator silently accepted an incomplete capture"),
+            }
         }
+        assert_eq!(reader.next(), None);
     }
 
     #[test]
