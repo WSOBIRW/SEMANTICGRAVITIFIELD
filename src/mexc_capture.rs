@@ -1099,7 +1099,10 @@ mod tests {
             .remove("orders_submitted");
         records.push(end_value.to_string());
         let reader = MexcCaptureReader::new(Cursor::new(records.join("\n")));
-        assert_eq!(reader.read_sorted(), Err(MexcCaptureError::InvalidContractValue));
+        assert_eq!(
+            reader.read_sorted(),
+            Err(MexcCaptureError::InvalidContractValue)
+        );
     }
 
     #[test]
