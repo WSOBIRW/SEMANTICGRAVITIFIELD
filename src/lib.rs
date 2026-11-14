@@ -40,5 +40,6 @@ pub use research::{
 pub use snapshot::SnapshotError;
 pub use validation::{EventValidator, ValidationError, ValidationWarning};
 pub use verification::{
-    split_chronologically, ChronologicalSplit, ChronologicalSplitConfig, SplitError,
+    evaluate_forward_round_trip, split_chronologically, ChronologicalSplit,
+    ChronologicalSplitConfig, ForwardVerificationError, SplitError,
 };
