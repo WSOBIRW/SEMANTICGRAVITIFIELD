@@ -325,3 +325,90 @@ mod tests {
         assert_eq!(split.excluded_outside_period_events, 1);
     }
 }
+
+
+#[cfg(test)]
+mod forward_execution_tests {
+    use super::*;
+    use crate::economic::{EconomicConfig, EconomicVerdict};
+    use crate::event::Quote;
+    use crate::research::{OpportunityCandidate, PriceDirection};
+
+    fn quote(id: &str, event_time_ms: i64, received_time_ms: i64, bid: i64, ask: i64) -> MarketEvent {
+        MarketEvent::quote(
+            id,
+            "test-source",
+            "BTC_USDT",
+            event_time_ms,
+            received_time_ms,
+            None,
+            Quote { bid_ticks: bid, ask_ticks: ask, price_scale: 100_000 },
+        )
+    }
+
+    fn candidate() -> OpportunityCandidate {
+        OpportunityCandidate {
+            instrument_id: "BTC_USDT".to_owned(),
+            direction: PriceDirection::Up,
+            movement_bps: 100,
+            maximum_observed_spread_bps: 10,
+            start_time_ms: 10,
+            end_time_ms: 100,
+            trade_count: 2,
+        }
+    }
+
+    fn costs() -> EconomicConfig {
+        EconomicConfig {
+            entry_fee_bps: 0,
+            exit_fee_bps: 0,
+            entry_slippage_bps: 0,
+            exit_slippage_bps: 0,
+            funding_cost_bps: 0,
+        }
+    }
+
+    #[test]
+    fn selects_entry_and_first_exit_only_after_signal_and_holding_horizon() {
+        let events = vec![
+            quote("before", 90, 90, 9_900, 9_910),
+            quote("entry", 110, 110, 10_000, 10_010),
+            quote("too-early", 125, 125, 10_100, 10_110),
+            quote("exit", 130, 130, 10_200, 10_210),
+            quote("later-better", 190, 190, 10_500, 10_510),
+        ];
+
+        let result = evaluate_forward_round_trip(&events, &candidate(), 20, costs()).unwrap();
+
+        assert_eq!(result.entry_time_ms, 110);
+        assert_eq!(result.exit_time_ms, 130);
+        assert_eq!(result.entry_price_ticks, 10_010);
+        assert_eq!(result.exit_price_ticks, 10_200);
+        assert_eq!(result.verdict, EconomicVerdict::Positive);
+    }
+
+    #[test]
+    fn rejects_a_quote_from_before_the_signal_even_if_received_late() {
+        let events = vec![
+            quote("late-old", 95, 105, 10_000, 10_010),
+            quote("entry", 110, 110, 10_000, 10_010),
+            quote("exit", 130, 130, 10_100, 10_110),
+        ];
+
+        let result = evaluate_forward_round_trip(&events, &candidate(), 20, costs()).unwrap();
+        assert_eq!(result.entry_time_ms, 110);
+    }
+
+    #[test]
+    fn refuses_to_invent_an_exit_when_forward_horizon_is_not_observed() {
+        let events = vec![
+            quote("entry", 110, 110, 10_000, 10_010),
+            quote("too-early", 129, 129, 10_100, 10_110),
+        ];
+
+        assert_eq!(
+            evaluate_forward_round_trip(&events, &candidate(), 20, costs()),
+            Err(ForwardVerificationError::MissingForwardExit)
+        );
+    }
+}
