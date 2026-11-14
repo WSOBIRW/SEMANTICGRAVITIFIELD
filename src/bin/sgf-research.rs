@@ -42,16 +42,18 @@ fn run() -> Result<(), String> {
         minimum_trade_count: usize::try_from(required_u64(&config_json, "minimum_trade_count")?)
             .map_err(|_| "minimum_trade_count выходит за допустимый диапазон".to_owned())?,
     };
-    let economic_json = config_json
+    let economic = config_json
         .get("economic")
-        .ok_or_else(|| "отсутствует объект economic".to_owned())?;
-    let economic = EconomicConfig {
-        entry_fee_bps: required_u64(economic_json, "entry_fee_bps")?,
-        exit_fee_bps: required_u64(economic_json, "exit_fee_bps")?,
-        entry_slippage_bps: required_u64(economic_json, "entry_slippage_bps")?,
-        exit_slippage_bps: required_u64(economic_json, "exit_slippage_bps")?,
-        funding_cost_bps: required_i64(economic_json, "funding_cost_bps")?,
-    };
+        .map(|economic_json| {
+            Ok::<EconomicConfig, String>(EconomicConfig {
+                entry_fee_bps: required_u64(economic_json, "entry_fee_bps")?,
+                exit_fee_bps: required_u64(economic_json, "exit_fee_bps")?,
+                entry_slippage_bps: required_u64(economic_json, "entry_slippage_bps")?,
+                exit_slippage_bps: required_u64(economic_json, "exit_slippage_bps")?,
+                funding_cost_bps: required_i64(economic_json, "funding_cost_bps")?,
+            })
+        })
+        .transpose()?;
 
     let input = File::open(&args[0])
         .map_err(|error| format!("не удалось открыть capture {}: {error}", args[0]))?;
@@ -105,29 +107,32 @@ fn run() -> Result<(), String> {
             let Some(candidate) = report.candidate else {
                 continue;
             };
-            let assessment = evaluate_round_trip(&window_events, &candidate, economic);
-            let (economic_result, economic_error) = match assessment {
-                Ok(value) => {
-                    match value.verdict {
-                        semantic_gravity_field::EconomicVerdict::Positive => positive_count += 1,
-                        semantic_gravity_field::EconomicVerdict::Negative => negative_count += 1,
-                        semantic_gravity_field::EconomicVerdict::BreakEven => break_even_count += 1,
+            let (economic_result, economic_error, economic_status) = match economic {
+                Some(config) => match evaluate_round_trip(&window_events, &candidate, config) {
+                    Ok(value) => {
+                        match value.verdict {
+                            semantic_gravity_field::EconomicVerdict::Positive => positive_count += 1,
+                            semantic_gravity_field::EconomicVerdict::Negative => negative_count += 1,
+                            semantic_gravity_field::EconomicVerdict::BreakEven => break_even_count += 1,
+                        }
+                        (
+                            Some(json!({
+                                "gross_return_bps": value.gross_return_bps,
+                                "total_cost_bps": value.total_cost_bps,
+                                "net_return_bps": value.net_return_bps,
+                                "verdict": format!("{:?}", value.verdict),
+                                "entry_time_ms": value.entry_time_ms,
+                                "exit_time_ms": value.exit_time_ms,
+                                "entry_price_ticks": value.entry_price_ticks,
+                                "exit_price_ticks": value.exit_price_ticks
+                            })),
+                            None,
+                            "PRELIMINARY_TOP_OF_BOOK_ESTIMATE",
+                        )
                     }
-                    (
-                        Some(json!({
-                            "gross_return_bps": value.gross_return_bps,
-                            "total_cost_bps": value.total_cost_bps,
-                            "net_return_bps": value.net_return_bps,
-                            "verdict": format!("{:?}", value.verdict),
-                            "entry_time_ms": value.entry_time_ms,
-                            "exit_time_ms": value.exit_time_ms,
-                            "entry_price_ticks": value.entry_price_ticks,
-                            "exit_price_ticks": value.exit_price_ticks
-                        })),
-                        None,
-                    )
-                }
-                Err(error) => (None, Some(format!("{error:?}"))),
+                    Err(error) => (None, Some(format!("{error:?}")), "EVALUATION_FAILED"),
+                },
+                None => (None, None, "NOT_EVALUATED_COSTS_NOT_CONFIGURED"),
             };
             let window_start_ms = origin
                 .checked_add(
@@ -153,6 +158,7 @@ fn run() -> Result<(), String> {
                 "movement_bps": candidate.movement_bps,
                 "maximum_spread_bps": candidate.maximum_observed_spread_bps,
                 "trade_count": candidate.trade_count,
+                "economic_status": economic_status,
                 "economic_assessment": economic_result,
                 "economic_error": economic_error
             }));
@@ -163,6 +169,7 @@ fn run() -> Result<(), String> {
         "status": "PRELIMINARY_RESEARCH_ONLY",
         "input": args[0],
         "configuration": config_json,
+        "economic_evaluation_enabled": economic.is_some(),
         "windows_scanned": windows_scanned,
         "candidates_found": candidate_reports.len(),
         "economic_positive": positive_count,
@@ -172,6 +179,7 @@ fn run() -> Result<(), String> {
         "limitations": [
             "Оценка использует только исторический top-of-book.",
             "Результат не моделирует очередь, глубину для размера позиции и задержку исполнения.",
+            "Без блока economic чистая доходность не рассчитывается.",
             "Funding и торговые издержки берутся только из явно заданной конфигурации.",
             "Положительный результат одного окна не является независимым подтверждением преимущества."
         ]
