@@ -439,6 +439,20 @@ mod forward_execution_tests {
     }
 
     #[test]
+    fn waits_until_all_signal_inputs_have_arrived_before_entering() {
+        let events = vec![
+            quote("signal-late-arrival", 99, 115, 9_900, 9_910),
+            quote("too-early-for-decision", 110, 110, 10_000, 10_010),
+            quote("entry", 120, 120, 10_000, 10_010),
+            quote("exit", 130, 130, 10_100, 10_110),
+        ];
+
+        let result = evaluate_forward_round_trip(&events, &candidate(), 10, costs()).unwrap();
+        assert_eq!(result.entry_time_ms, 120);
+        assert_eq!(result.exit_time_ms, 130);
+    }
+
+    #[test]
     fn refuses_to_invent_an_exit_when_forward_horizon_is_not_observed() {
         let events = vec![
             quote("entry", 110, 110, 10_000, 10_010),
